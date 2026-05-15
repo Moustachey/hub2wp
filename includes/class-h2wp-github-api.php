@@ -873,11 +873,12 @@ class H2WP_GitHub_API {
 	 * @param string $branch Optional branch name.
 	 * @return array Compatibility data (is_compatible, reason) or error.
 	 */
-	public function check_compatibility( $owner, $repo, $repo_type = 'plugin', $branch = '', $prioritize_releases = true, $source_context = null ) {
+	public function check_compatibility( $owner, $repo, $repo_type = 'plugin', $branch = '', $prioritize_releases = true, $source_context = null, $subdirectory = '' ) {
 		$repo_type = in_array( $repo_type, array( 'plugin', 'theme' ), true ) ? $repo_type : 'plugin';
 		$source_context = is_array( $source_context ) ? $source_context : $this->resolve_version_source( $owner, $repo, $branch, $prioritize_releases );
 		$ref            = isset( $source_context['ref'] ) ? (string) $source_context['ref'] : $branch;
-		$cache_key      = 'compatibility_' . $repo_type . '_' . $owner . '_' . $repo . '_' . $this->get_branch_cache_key_segment( $ref ) . '_' . ( ! empty( $source_context['source'] ) ? $source_context['source'] : 'branch' );
+		$subdir_key     = ! empty( $subdirectory ) ? '_' . md5( $subdirectory ) : '';
+		$cache_key      = 'compatibility_' . $repo_type . '_' . $owner . '_' . $repo . '_' . $this->get_branch_cache_key_segment( $ref ) . '_' . ( ! empty( $source_context['source'] ) ? $source_context['source'] : 'branch' ) . $subdir_key;
 		$cached = H2WP_Cache::get( $cache_key );
 		if ( false !== $cached ) {
 			return $cached;
@@ -895,7 +896,7 @@ class H2WP_GitHub_API {
 			}
 			$headers = $this->extract_headers_from_style( $style_content );
 		} else {
-			$readme_content = $this->fetch_readme_content( $owner, $repo, $ref );
+			$readme_content = $this->fetch_readme_content( $owner, $repo, $ref, $subdirectory );
 			if ( is_wp_error( $readme_content ) ) {
 				$error_data = array(
 					'is_compatible' => false,
@@ -944,8 +945,17 @@ class H2WP_GitHub_API {
 	 * @param string $branch Optional branch name.
 	 * @return string|WP_Error Readme content or error.
 	 */
-	private function fetch_readme_content( $owner, $repo, $branch = '' ) {
+	private function fetch_readme_content( $owner, $repo, $branch = '', $path_prefix = '' ) {
 		$filenames = array( 'readme.txt', 'README.txt' );
+
+		if ( ! empty( $path_prefix ) ) {
+			$filenames = array_map(
+				function( $f ) use ( $path_prefix ) {
+					return trailingslashit( $path_prefix ) . $f;
+				},
+				$filenames
+			);
+		}
 
 		foreach ( $filenames as $filename ) {
 			$url = $this->base_url . "/repos/{$owner}/{$repo}/contents/{$filename}";
@@ -967,7 +977,10 @@ class H2WP_GitHub_API {
 			}
 		}
 
-		// Fall back to the readme endpoint which will find README.md/readme.md/README etc.
+		// Fall back to the readme endpoint - only for single-repo plugins which will find README.md/readme.md/README etc. (always fetches root).
+		if ( ! empty( $path_prefix ) ) {
+			return new WP_Error( 'h2wp_readme_not_found', __( 'No valid readme file found.', 'hub2wp' ) );
+		}
 		$url = $this->base_url . "/repos/{$owner}/{$repo}/readme";
 		if ( ! empty( $branch ) ) {
 			$url = add_query_arg( 'ref', $branch, $url );
@@ -1131,16 +1144,17 @@ class H2WP_GitHub_API {
 	 * @param string $branch Optional branch name.
 	 * @return array|WP_Error Parsed headers or error.
 	 */
-	public function get_readme_headers( $owner, $repo, $branch = '', $prioritize_releases = true, $source_context = null ) {
+	public function get_readme_headers( $owner, $repo, $branch = '', $prioritize_releases = true, $source_context = null, $subdirectory = '' ) {
 		$source_context = is_array( $source_context ) ? $source_context : $this->resolve_version_source( $owner, $repo, $branch, $prioritize_releases );
 		$ref            = isset( $source_context['ref'] ) ? (string) $source_context['ref'] : $branch;
-		$cache_key      = 'readme_headers_' . $owner . '_' . $repo . '_' . $this->get_branch_cache_key_segment( $ref ) . '_' . ( ! empty( $source_context['source'] ) ? $source_context['source'] : 'branch' );
+		$subdir_key     = ! empty( $subdirectory ) ? '_' . md5( $subdirectory ) : '';
+		$cache_key      = 'readme_headers_' . $owner . '_' . $repo . '_' . $this->get_branch_cache_key_segment( $ref ) . '_' . ( ! empty( $source_context['source'] ) ? $source_context['source'] : 'branch' ) . $subdir_key;
 		$cached = H2WP_Cache::get( $cache_key );
 		if ( false !== $cached ) {
 			return $cached;
 		}
 
-		$readme_content = $this->fetch_readme_content( $owner, $repo, $ref );
+		$readme_content = $this->fetch_readme_content( $owner, $repo, $ref, $subdirectory );
 		if ( is_wp_error( $readme_content ) ) {
 			return $readme_content;
 		}
@@ -1295,5 +1309,237 @@ class H2WP_GitHub_API {
 		H2WP_Cache::set( $cache_key, $changelog, HOUR_IN_SECONDS );
 
 		return $changelog;
+	}
+
+	/**
+	 * Detect whether a repository is a single plugin or a monorepo.
+	 *
+	 * Checks the repo root for a WordPress plugin header. If none is found,
+	 * scans one level of subdirectories. Returns 'single' or 'monorepo' with
+	 * a list of discovered plugins.
+	 *
+	 * @param string $owner  Repository owner.
+	 * @param string $repo   Repository name.
+	 * @param string $branch Optional branch.
+	 * @return array|WP_Error {
+	 *   type: 'single'|'monorepo',
+	 *   plugins: array of { slug, subdirectory, main_file } (monorepo only)
+	 * }
+	 */
+	public function detect_repo_type( $owner, $repo, $branch = '' ) {
+		$cache_key = 'repo_type_' . $owner . '_' . $repo . '_' . $this->get_branch_cache_key_segment( $branch );
+		$cached    = H2WP_Cache::get( $cache_key );
+		if ( false !== $cached ) {
+			return $cached;
+		}
+
+		$root_contents = $this->get_directory_contents( $owner, $repo, '', $branch );
+		if ( is_wp_error( $root_contents ) ) {
+			return $root_contents;
+		}
+
+		// Check repo root for a plugin header
+		foreach ( $root_contents as $item ) {
+			if ( 'file' !== $item['type'] || substr( $item['name'], -4 ) !== '.php' ) {
+				continue;
+			}
+			$content = $this->get_file_content( $owner, $repo, $item['path'], $branch );
+			if ( ! is_wp_error( $content ) && $this->has_plugin_header( $content ) ) {
+				$result = array( 'type' => 'single', 'plugins' => array() );
+				H2WP_Cache::set( $cache_key, $result );
+				return $result;
+			}
+		}
+
+		// Scan one level of subdirectories.
+		// If a subdirectory contains no PHP files but only more subdirectories,
+		// treat it as a container folder (e.g. /plugins/) and scan one level deeper.
+		$found_plugins = array();
+
+		foreach ( $root_contents as $item ) {
+			if ( 'dir' !== $item['type'] ) {
+				continue;
+			}
+
+			$subdir_contents = $this->get_directory_contents( $owner, $repo, $item['path'], $branch );
+			if ( is_wp_error( $subdir_contents ) ) {
+				continue;
+			}
+
+			// Check whether this subdir directly contains a plugin PHP file
+			$found_here = false;
+			foreach ( $subdir_contents as $file ) {
+				if ( 'file' !== $file['type'] || substr( $file['name'], -4 ) !== '.php' ) {
+					continue;
+				}
+				$content = $this->get_file_content( $owner, $repo, $file['path'], $branch );
+				if ( ! is_wp_error( $content ) && $this->has_plugin_header( $content ) ) {
+					$found_plugins[] = array(
+						'slug'         => $item['name'],
+						'subdirectory' => $item['path'],
+						'main_file'    => $file['path'],
+					);
+					$found_here = true;
+					break;
+				}
+			}
+
+			if ( $found_here ) {
+				continue;
+			}
+
+			// No plugin PHP file found directly — check if this is a container
+			// folder (like /plugins/) by scanning its subdirectories one level deeper
+			foreach ( $subdir_contents as $subitem ) {
+				if ( 'dir' !== $subitem['type'] ) {
+					continue;
+				}
+
+				$deep_contents = $this->get_directory_contents( $owner, $repo, $subitem['path'], $branch );
+				if ( is_wp_error( $deep_contents ) ) {
+					continue;
+				}
+
+				foreach ( $deep_contents as $file ) {
+					if ( 'file' !== $file['type'] || substr( $file['name'], -4 ) !== '.php' ) {
+						continue;
+					}
+					$content = $this->get_file_content( $owner, $repo, $file['path'], $branch );
+					if ( ! is_wp_error( $content ) && $this->has_plugin_header( $content ) ) {
+						$found_plugins[] = array(
+							'slug'         => $subitem['name'],
+							'subdirectory' => $subitem['path'],
+							'main_file'    => $file['path'],
+						);
+						break;
+					}
+				}
+			}
+		}
+
+		if ( ! empty( $found_plugins ) ) {
+			$result = array( 'type' => 'monorepo', 'plugins' => $found_plugins );
+			H2WP_Cache::set( $cache_key, $result );
+			return $result;
+		}
+
+		return new WP_Error( 'h2wp_no_plugin_found', __( 'No WordPress plugins found in this repository.', 'hub2wp' ) );
+	}
+
+	/**
+	 * Get the contents listing of a directory in a repository.
+	 *
+	 * @param string $owner  Repository owner.
+	 * @param string $repo   Repository name.
+	 * @param string $path   Directory path (empty string for root).
+	 * @param string $branch Optional branch/ref.
+	 * @return array|WP_Error
+	 */
+	public function get_directory_contents( $owner, $repo, $path = '', $branch = '' ) {
+		$url = $this->base_url . '/repos/' . $owner . '/' . $repo . '/contents/' . ltrim( $path, '/' );
+		if ( ! empty( $branch ) ) {
+			$url = add_query_arg( 'ref', $branch, $url );
+		}
+		$response = $this->request( $url );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+		$contents = json_decode( wp_remote_retrieve_body( $response ), true );
+		if ( ! is_array( $contents ) ) {
+			return new WP_Error( 'h2wp_api_error', __( 'Invalid directory contents from GitHub API.', 'hub2wp' ) );
+		}
+		return $contents;
+	}
+
+	/**
+	 * Get the decoded text content of a file from a repository.
+	 *
+	 * @param string $owner  Repository owner.
+	 * @param string $repo   Repository name.
+	 * @param string $path   File path within the repo.
+	 * @param string $branch Optional branch/ref.
+	 * @return string|WP_Error
+	 */
+	public function get_file_content( $owner, $repo, $path, $branch = '' ) {
+		$url = $this->base_url . '/repos/' . $owner . '/' . $repo . '/contents/' . ltrim( $path, '/' );
+		if ( ! empty( $branch ) ) {
+			$url = add_query_arg( 'ref', $branch, $url );
+		}
+		$response = $this->request( $url );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+		if ( ! is_array( $data ) || ! isset( $data['content'] ) ) {
+			return new WP_Error( 'h2wp_api_error', __( 'Invalid file data from GitHub API.', 'hub2wp' ) );
+		}
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
+		return base64_decode( $data['content'] );
+	}
+
+	/**
+	 * Check whether PHP file content contains a WordPress plugin header.
+	 *
+	 * @param string $content File content.
+	 * @return bool
+	 */
+	public function has_plugin_header( $content ) {
+		return false !== strpos( $content, 'Plugin Name:' );
+	}
+
+	/**
+	 * Get the download URL for a specific plugin's release asset from a monorepo.
+	 *
+	 * Finds the latest GitHub release tagged "{plugin_slug}/v*" and returns
+	 * the URL of its first zip asset, or the release zipball as a fallback.
+	 *
+	 * @param string $owner       Repository owner.
+	 * @param string $repo        Repository name.
+	 * @param string $plugin_slug Plugin folder name (e.g. "custom-plugin-one").
+	 * @return string|WP_Error Asset download URL or error.
+	 */
+	public function get_monorepo_release_asset_url( $owner, $repo, $plugin_slug ) {
+		$cache_key = 'monorepo_asset_' . $owner . '_' . $repo . '_' . sanitize_key( $plugin_slug );
+		$cached    = H2WP_Cache::get( $cache_key );
+		if ( false !== $cached ) {
+			return $cached;
+		}
+
+		$url      = $this->base_url . '/repos/' . $owner . '/' . $repo . '/releases';
+		$response = $this->request( $url );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$releases = json_decode( wp_remote_retrieve_body( $response ), true );
+		if ( ! is_array( $releases ) ) {
+			return new WP_Error( 'h2wp_api_error', __( 'Invalid releases data from GitHub API.', 'hub2wp' ) );
+		}
+
+		$tag_prefix = $plugin_slug . '/v';
+		foreach ( $releases as $release ) {
+			if ( empty( $release['tag_name'] ) ) {
+				continue;
+			}
+			if ( 0 !== strpos( $release['tag_name'], $tag_prefix ) ) {
+				continue;
+			}
+			// Prefer an explicit zip asset attached to the release
+			if ( ! empty( $release['assets'] ) ) {
+				foreach ( $release['assets'] as $asset ) {
+					if ( isset( $asset['content_type'] ) && 'application/zip' === $asset['content_type'] ) {
+						$result = esc_url_raw( $asset['url'] );
+						H2WP_Cache::set( $cache_key, $result );
+						return $result;
+					}
+				}
+			}
+			// Fallback: the release's auto-generated full-repo zipball
+			$result = esc_url_raw( $release['zipball_url'] );
+			H2WP_Cache::set( $cache_key, $result );
+			return $result;
+		}
+
+		return new WP_Error( 'h2wp_no_release', __( 'No matching release found for this plugin.', 'hub2wp' ) );
 	}
 }

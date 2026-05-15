@@ -18,9 +18,10 @@ class H2WP_Settings {
 	 */
 	public static function init() {
 		add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
-		add_action( 'admin_menu', array( __CLASS__, 'add_settings_page' ) );
-		add_action( 'admin_init', array( __CLASS__, 'handle_private_repo_actions' ) );
-		add_action( 'admin_init', array( __CLASS__, 'handle_run_update_check_action' ) );
+        add_action( 'admin_menu', array( __CLASS__, 'add_settings_page' ) );
+        add_action( 'admin_init', array( __CLASS__, 'handle_private_repo_actions' ) );
+        add_action( 'admin_init', array( __CLASS__, 'handle_run_update_check_action' ) );
+        add_action( 'admin_notices', array( __CLASS__, 'display_plugins_added_notice' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'display_private_repo_notices' ) );
 		add_action( 'admin_post_h2wp_clear_cache', array( __CLASS__, 'handle_clear_cache' ) );
 		add_action( 'wp_ajax_h2wp_clear_cache', array( __CLASS__, 'ajax_clear_cache' ) );
@@ -492,6 +493,83 @@ class H2WP_Settings {
 	}
 
 	/**
+	 * Add a repository to the monitored plugins list.
+	 *
+	 * Shared by both the PHP form handler and the AJAX endpoint so the
+	 * logic lives in one place. Supports monorepo plugins via $subdirectory.
+	 *
+	 * @param string $owner        Repository owner.
+	 * @param string $repo         Repository name.
+	 * @param string $branch       Optional branch.
+	 * @param bool   $prioritize   Whether to prioritize releases.
+	 * @param string $subdirectory Subdirectory path for monorepo plugins (empty for single repos).
+	 * @return string|WP_Error     The stored repo key on success, WP_Error on failure.
+	 */
+	public static function add_repo_to_monitored( $owner, $repo, $branch = '', $prioritize = true, $subdirectory = '' ) {
+		$owner        = strtolower( sanitize_text_field( trim( (string) $owner ) ) );
+		$repo         = strtolower( sanitize_text_field( trim( (string) $repo ) ) );
+		$subdirectory = trim( sanitize_text_field( (string) $subdirectory ), '/' );
+
+		if ( empty( $owner ) || empty( $repo ) ) {
+			return new WP_Error( 'h2wp_invalid_repo', __( 'Invalid repository owner or name.', 'hub2wp' ) );
+		}
+
+		$access_token  = self::get_access_token();
+		$repo_key_base = $owner . '/' . $repo;
+
+		$repo_data = self::verify_repo( $repo_key_base, $access_token );
+		if ( is_wp_error( $repo_data ) ) {
+			return $repo_data;
+		}
+
+		// Monorepo plugins get owner/repo/slug as their key to avoid collisions
+		$repo_key = ! empty( $subdirectory )
+			? $owner . '/' . $repo . '/' . basename( $subdirectory )
+			: $owner . '/' . $repo;
+
+		$monitored_plugins = get_option( 'h2wp_plugins', array() );
+
+		if ( isset( $monitored_plugins[ $repo_key ] ) ) {
+			return new WP_Error(
+				'h2wp_repo_exists',
+				// Translators: %s is the repository key.
+				sprintf( __( 'Repository "%s" is already in your monitored plugins list.', 'hub2wp' ), $repo_key )
+			);
+		}
+
+		$plugin_file = false;
+		if ( class_exists( 'H2WP_Admin_Page' ) ) {
+			$plugin_file = H2WP_Admin_Page::get_installed_plugin_file( $owner, $repo );
+		}
+
+		$entry = array(
+			'owner'               => $owner,
+			'repo'                => $repo,
+			'name'                => ! empty( $subdirectory ) ? basename( $subdirectory ) : ( isset( $repo_data['name'] ) ? $repo_data['name'] : $repo ),
+			'private'             => isset( $repo_data['private'] ) ? (bool) $repo_data['private'] : false,
+			'branch'              => (string) $branch,
+			'prioritize_releases' => (bool) $prioritize,
+			'subdirectory'        => $subdirectory,
+			'added'               => time(),
+			'added_by'            => get_current_user_id(),
+			'last_checked'        => time(),
+			'last_updated'        => time(),
+		);
+
+		if ( $plugin_file ) {
+			$entry['plugin_file'] = $plugin_file;
+		}
+
+		$monitored_plugins[ $repo_key ] = $entry;
+
+		if ( ! update_option( 'h2wp_plugins', $monitored_plugins ) ) {
+			return new WP_Error( 'h2wp_add_failed', __( 'Failed to save repository. Please try again.', 'hub2wp' ) );
+		}
+
+		return $repo_key;
+	}
+
+	/**
 	 * Handle private repository actions (add/remove).
 	 */
 	public static function handle_private_repo_actions() {
@@ -923,6 +1001,31 @@ class H2WP_Settings {
 		// displays settings errors on options pages. Calling it manually would cause
 		// duplicate notices. The add_settings_error() calls in handle_private_repo_actions()
 		// are sufficient for notices to appear.
+	}
+
+	/**
+	 * Display a success notice after monorepo plugins are added via AJAX redirect.
+	 */
+	public static function display_plugins_added_notice() {
+		if ( ! isset( $_GET['page'] ) || 'h2wp_settings_page' !== sanitize_key( $_GET['page'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
+		}
+		if ( empty( $_GET['h2wp_added'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
+		}
+		$count = absint( $_GET['h2wp_added'] );
+		if ( ! $count ) {
+			return;
+		}
+		echo '<div class="notice notice-success is-dismissible"><p>';
+		echo esc_html(
+			sprintf(
+				// Translators: %d is the number of plugins added.
+				_n( '%d plugin added to monitoring successfully.', '%d plugins added to monitoring successfully.', $count, 'hub2wp' ),
+				$count
+			)
+		);
+		echo '</p></div>';
 	}
 
 	/**

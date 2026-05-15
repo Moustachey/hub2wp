@@ -248,12 +248,15 @@ jQuery(document).ready(function($) {
             return;
         }
 
+        var subdirectory = button.data('subdirectory') || '';
+
         var pluginData = {
             action: 'h2wp_install_plugin',
             nonce: h2wp_ajax_object.nonce,
             owner: owner,
             repo: repo,
-            repo_type: repoType
+            repo_type: repoType,
+            subdirectory: subdirectory
         };
 
         // Make AJAX request to install plugin.
@@ -351,4 +354,178 @@ jQuery(document).ready(function($) {
 
         openRepositoryDetails(owner, repo, repoType, false);
     }());
+
+    // Monorepo Detection — intercept "Add Repository" form
+
+    var $addRepoForm = $('input#h2wp_private_repo_input').closest('form');
+    var $repoInput   = $('#h2wp_private_repo_input');
+
+    if ( $addRepoForm.length && $repoInput.length ) {
+
+        // Inject picker container below the existing form description
+        $repoInput.closest('td').append('<div id="h2wp-monorepo-picker" style="display:none;margin-top:12px;"></div>');
+
+        $addRepoForm.on('submit', function(e) {
+            var repoValue = $.trim( $repoInput.val() );
+            var parts     = repoValue.split('/');
+
+            // Only intercept clean owner/repo values
+            if ( parts.length !== 2 || !parts[0] || !parts[1] ) {
+                return;
+            }
+
+            // If picker already chose a subdirectory, let the form submit normally
+            if ( $('#h2wp-subdirectory-ready').val() === '1' ) {
+                return;
+            }
+
+            e.preventDefault();
+
+            var owner   = parts[0];
+            var repo    = parts[1];
+            var $btn    = $addRepoForm.find('button[type="submit"]');
+            var $picker = $('#h2wp-monorepo-picker');
+
+            $btn.prop('disabled', true).text('Detecting...');
+            $picker.hide().empty();
+
+            $.ajax({
+                url: h2wp_ajax_object.ajax_url,
+                method: 'POST',
+                data: {
+                    action: 'h2wp_detect_repo_type',
+                    nonce:  h2wp_ajax_object.nonce,
+                    owner:  owner,
+                    repo:   repo
+                },
+                success: function(response) {
+                    if ( !response.success ) {
+                        alert( response.data.message || 'Could not detect repository type.' );
+                        return;
+                    }
+
+                    if ( 'single' === response.data.type ) {
+                        // Single repo — detach our handler and submit normally
+                        $addRepoForm.off('submit').submit();
+                        return;
+                    }
+
+                    // Monorepo — show the plugin picker
+                    h2wpRenderMonorepoPicker( response.data.plugins, owner, repo );
+                },
+                error: function() {
+                    alert( h2wp_ajax_object.error_message || 'An error occurred.' );
+                },
+                complete: function() {
+                    $btn.prop('disabled', false).text('Add Repository');
+                }
+            });
+        });
+    }
+
+    function h2wpRenderMonorepoPicker( plugins, owner, repo ) {
+        var $picker = $('#h2wp-monorepo-picker');
+
+        var html  = '<p><strong>Monorepo detected</strong> — ';
+            html += plugins.length + ' plugin(s) found. Select which to monitor:</p>';
+            html += '<label style="display:block;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #ddd;">';
+            html += '<input type="checkbox" id="h2wp-select-all-plugins" checked /> <strong>Select all / Deselect all</strong>';
+            html += '</label>';
+            html += '<div id="h2wp-plugin-checklist" style="margin:0 0 12px;">';
+
+        plugins.forEach(function(plugin) {
+            html += '<label style="display:block;margin-bottom:6px;">'
+                + '<input type="checkbox" class="h2wp-monorepo-plugin-cb" value="' + plugin.subdirectory + '" checked /> '
+                + '<strong>' + plugin.slug + '</strong> '
+                + '<span style="color:#646970;font-size:12px;">(' + plugin.subdirectory + ')</span>'
+                + '</label>';
+        });
+
+        html += '</div>';
+        html += '<button type="button" id="h2wp-add-selected-plugins" class="button button-primary">Add Selected Plugins</button> ';
+        html += '<button type="button" id="h2wp-cancel-picker" class="button">Cancel</button>';
+        html += '<div id="h2wp-add-repo-status" style="margin-top:10px;"></div>';
+
+        $picker.html(html).show();
+
+        // Select all / deselect all toggle
+        $('#h2wp-select-all-plugins').on('change', function() {
+            $('.h2wp-monorepo-plugin-cb').prop('checked', $(this).is(':checked'));
+        });
+
+        // Keep "select all" in sync when individual boxes are changed
+        $(document).on('change', '.h2wp-monorepo-plugin-cb', function() {
+            var total   = $('.h2wp-monorepo-plugin-cb').length;
+            var checked = $('.h2wp-monorepo-plugin-cb:checked').length;
+            $('#h2wp-select-all-plugins').prop('checked', total === checked)
+                                        .prop('indeterminate', checked > 0 && checked < total);
+        });
+
+        $('#h2wp-cancel-picker').on('click', function() {
+            $picker.hide().empty();
+        });
+
+        $('#h2wp-add-selected-plugins').on('click', function() {
+            var selected = [];
+            $('.h2wp-monorepo-plugin-cb:checked').each(function() {
+                selected.push( $(this).val() );
+            });
+
+            if ( !selected.length ) {
+                alert('Please select at least one plugin.');
+                return;
+            }
+
+            var $btn      = $(this);
+            var $status   = $('#h2wp-add-repo-status');
+            var branch    = $.trim( $('#h2wp_branch_input').val() );
+            var prioritize = $('#h2wp_prioritize_releases').is(':checked') ? '1' : '0';
+
+            $btn.prop('disabled', true).text('Adding...');
+            $status.empty();
+
+            h2wpAddPluginsSequentially( selected, 0, owner, repo, branch, prioritize, $btn, $status, 0 );
+        });
+    }
+
+    function h2wpAddPluginsSequentially( subdirs, index, owner, repo, branch, prioritize, $btn, $status, successCount ) {
+        if ( index >= subdirs.length ) {
+            // Auto-redirect back to this page with a success param for the WP notice
+            var base = window.location.href.split('&h2wp_added=')[0];
+            window.location.href = base + '&h2wp_added=' + successCount;
+            return;
+        }
+
+        var subdirectory = subdirs[ index ];
+        var slug         = subdirectory.split('/').pop();
+
+        $.ajax({
+            url: h2wp_ajax_object.ajax_url,
+            method: 'POST',
+            data: {
+                action:              'h2wp_add_monitored_repo',
+                nonce:               h2wp_ajax_object.nonce,
+                owner:               owner,
+                repo:                repo,
+                branch:              branch,
+                prioritize_releases: prioritize,
+                subdirectory:        subdirectory
+            },
+            success: function(response) {
+                if ( response.success ) {
+                    $status.append('<p style="color:#00a32a;">&#10003; Added: <strong>' + slug + '</strong></p>');
+                    successCount++;
+                } else {
+                    $status.append('<p style="color:#d63638;">&#10007; ' + slug + ': ' + ( response.data.message || 'Unknown error' ) + '</p>');
+                }
+            },
+            error: function() {
+                $status.append('<p style="color:#d63638;">&#10007; Error adding <strong>' + slug + '</strong></p>');
+            },
+            complete: function() {
+                h2wpAddPluginsSequentially( subdirs, index + 1, owner, repo, branch, prioritize, $btn, $status, successCount );
+            }
+        });
+    }
+
 });

@@ -66,14 +66,18 @@ class H2WP_Plugin_Updater {
 		$now             = time();
 
 		foreach ( $h2wp_plugins as $plugin_id => &$plugin ) {
-			list( $owner, $repo ) = explode( '/', $plugin_id );
+			$parts        = explode( '/', $plugin_id );
+			$owner        = $parts[0];
+			$repo         = $parts[1];
+			$subdirectory = isset( $plugin['subdirectory'] ) ? $plugin['subdirectory'] : '';
+
 			$tracking_preferences = H2WP_Settings::get_repo_tracking_preferences( $owner, $repo, 'plugin' );
 			$branch               = $tracking_preferences['branch'];
 			$prioritize_releases  = $tracking_preferences['prioritize_releases'];
-			$source_context      = $api->resolve_version_source( $owner, $repo, $branch, $prioritize_releases );
+			$source_context       = $api->resolve_version_source( $owner, $repo, $branch, $prioritize_releases );
 
-			// Get readme headers
-			$headers = $api->get_readme_headers( $owner, $repo, $branch, $prioritize_releases, $source_context );
+			// Get readme headers, passing subdirectory for monorepo plugins
+			$headers = $api->get_readme_headers( $owner, $repo, $branch, $prioritize_releases, $source_context, $subdirectory );
 			if ( is_wp_error( $headers ) || empty( $headers['stable tag'] ) ) {
 				if ( is_wp_error( $headers ) ) {
 					self::log_debug( sprintf( 'Plugin update check failed for %s: %s', $plugin_id, $headers->get_error_message() ) );
@@ -82,15 +86,23 @@ class H2WP_Plugin_Updater {
 			}
 
 			// Update plugin data
-			$plugin['version']      = $headers['stable tag'];
-			$plugin['requires']     = isset( $headers['requires at least'] ) ? $headers['requires at least'] : '';
-			$plugin['tested']       = isset( $headers['tested up to'] ) ? $headers['tested up to'] : '';
-			$plugin['requires_php'] = isset( $headers['requires php'] ) ? $headers['requires php'] : '';
-			$plugin['last_checked'] = $now;
-			$plugin['download_url'] = $source_context['download_url'];
-			$plugin['uses_releases'] = ! empty( $source_context['uses_releases'] );
-			$plugin['version_source'] = isset( $source_context['source'] ) ? $source_context['source'] : 'branch';
+			$plugin['version']             = $headers['stable tag'];
+			$plugin['requires']            = isset( $headers['requires at least'] ) ? $headers['requires at least'] : '';
+			$plugin['tested']              = isset( $headers['tested up to'] ) ? $headers['tested up to'] : '';
+			$plugin['requires_php']        = isset( $headers['requires php'] ) ? $headers['requires php'] : '';
+			$plugin['last_checked']        = $now;
+			$plugin['uses_releases']       = ! empty( $source_context['uses_releases'] );
+			$plugin['version_source']      = isset( $source_context['source'] ) ? $source_context['source'] : 'branch';
 			$plugin['prioritize_releases'] = $prioritize_releases;
+
+			// For monorepo plugins use the per-plugin release asset; fall back to full repo zip
+			if ( ! empty( $subdirectory ) ) {
+				$plugin_slug              = basename( $subdirectory );
+				$asset_url                = $api->get_monorepo_release_asset_url( $owner, $repo, $plugin_slug );
+				$plugin['download_url']   = is_wp_error( $asset_url ) ? $source_context['download_url'] : $asset_url;
+			} else {
+				$plugin['download_url'] = $source_context['download_url'];
+			}
 
 			$plugins_updated = true;
 		}
@@ -699,9 +711,13 @@ class H2WP_Plugin_Updater {
 				'filename'    => $tmpfname,
 				'redirection' => 5,
 				'headers'     => array(
-					'Authorization' => 'token ' . $access_token,
-					'Accept'        => 'application/vnd.github+json',
-				),
+                    'Authorization' => 'token ' . $access_token,
+                    // Release asset URLs need octet-stream to receive the file itself.
+                    // Zipball URLs need the standard API accept header.
+                    'Accept'        => ( false !== strpos( $package, '/releases/assets/' ) )
+                        ? 'application/octet-stream'
+                        : 'application/vnd.github+json',
+                ),
 			)
 		);
 
@@ -790,17 +806,23 @@ class H2WP_Plugin_Updater {
 	 * @return string
 	 */
 	private static function get_repo_key_from_package_url( $package ) {
-		$path = wp_parse_url( $package, PHP_URL_PATH );
-		if ( empty( $path ) ) {
-			return '';
-		}
+        $path = wp_parse_url( $package, PHP_URL_PATH );
+        if ( empty( $path ) ) {
+            return '';
+        }
 
-		if ( preg_match( '#/repos/([^/]+)/([^/]+)/zipball(?:/.*)?$#', $path, $matches ) ) {
-			return strtolower( $matches[1] . '/' . $matches[2] );
-		}
+        // Standard zipball: /repos/{owner}/{repo}/zipball/...
+        if ( preg_match( '#/repos/([^/]+)/([^/]+)/zipball(?:/.*)?$#', $path, $matches ) ) {
+            return strtolower( $matches[1] . '/' . $matches[2] );
+        }
 
-		return '';
-	}
+        // Release asset: /repos/{owner}/{repo}/releases/assets/{id}
+        if ( preg_match( '#/repos/([^/]+)/([^/]+)/releases/assets/#', $path, $matches ) ) {
+            return strtolower( $matches[1] . '/' . $matches[2] );
+        }
+
+        return '';
+    }
 
 	/**
 	 * Clean up scheduled events on plugin deactivation.

@@ -15,8 +15,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class H2WP_Plugin_Installer {
 
 	public $plugin_data = array();
-	public $theme_data  = array();
-	private $install_target_folder = '';
+    public $theme_data  = array();
+    private $install_target_folder = '';
+    private $install_subdirectory  = ''; // subdirectory within the zip for monorepo plugins
 
 	/**
 	 * Install a plugin from a GitHub ZIP URL.
@@ -25,7 +26,7 @@ class H2WP_Plugin_Installer {
 	 * @param string $access_token  Optional GitHub access token for private repos.
 	 * @return bool|WP_Error True on success, WP_Error on failure.
 	 */
-	public function install_plugin( $download_url, $access_token = '' ) {
+	public function install_plugin( $download_url, $access_token = '', $subdirectory = '' ) {
 		require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
 
 		$upgrader = new Plugin_Upgrader( new H2WP_Silent_Installer_Skin() );
@@ -43,17 +44,22 @@ class H2WP_Plugin_Installer {
 			$package = $download_url;
 		}
 
-		$this->install_target_folder = $this->get_repo_slug_from_download_url( $download_url );
-		add_filter( 'upgrader_source_selection', array( $this, 'normalize_install_source_folder' ), 10, 4 );
+		// For monorepo plugins, target the plugin slug; for single repos, use the repo slug
+        $this->install_subdirectory  = trim( (string) $subdirectory, '/' );
+        $this->install_target_folder = ! empty( $subdirectory )
+            ? basename( $subdirectory )
+            : $this->get_repo_slug_from_download_url( $download_url );
+        add_filter( 'upgrader_source_selection', array( $this, 'normalize_install_source_folder' ), 10, 4 );
 
 		ob_start();
 		$result = $upgrader->install( $package );
 		ob_end_clean();
 		remove_filter( 'upgrader_source_selection', array( $this, 'normalize_install_source_folder' ), 10 );
-		$this->install_target_folder = '';
+        $this->install_target_folder = '';
+        $this->install_subdirectory  = '';
 
-		// Always clean up the temp file.
-		if ( null !== $local_file && file_exists( $local_file ) ) {
+        // Always clean up the temp file.
+        if ( null !== $local_file && file_exists( $local_file ) ) {
 			// phpcs:ignore -- WordPress.PHP.NoSilencedErrors.Discouraged & WordPress.WP.AlternativeFunctions.file_system_read_file -- We want to suppress errors here since the file might not exist or be deletable, and there's no real alternative function for this.
 			@unlink( $local_file );
 		}
@@ -217,33 +223,64 @@ class H2WP_Plugin_Installer {
 	 * @return string|WP_Error
 	 */
 	public function normalize_install_source_folder( $source, $remote_source, $upgrader, $hook_extra = array() ) {
-		global $wp_filesystem;
+        global $wp_filesystem;
 
-		if ( empty( $this->install_target_folder ) ) {
-			return $source;
-		}
+        if ( empty( $this->install_target_folder ) ) {
+            return $source;
+        }
 
-		$new_source = trailingslashit( $remote_source ) . $this->install_target_folder;
-		if ( trailingslashit( $new_source ) === trailingslashit( $source ) ) {
-			return $source;
-		}
+        if ( ! $wp_filesystem || ! method_exists( $wp_filesystem, 'move' ) ) {
+            return $source;
+        }
 
-		if ( ! $wp_filesystem || ! method_exists( $wp_filesystem, 'move' ) ) {
-			return $source;
-		}
+        $final_dest = trailingslashit( $remote_source ) . $this->install_target_folder;
 
-		if ( ! $wp_filesystem->move( untrailingslashit( $source ), $new_source ) ) {
-			return new WP_Error(
-				'h2wp_rename_error',
-				sprintf(
-					/* translators: 1: extracted folder, 2: expected folder */
-					__( 'Could not rename extracted folder from "%1$s" to "%2$s".', 'hub2wp' ),
-					basename( $source ),
-					$this->install_target_folder
-				)
-			);
-		}
+        // Monorepo: the zip contains the full repo; navigate into the plugin subdirectory
+        if ( ! empty( $this->install_subdirectory ) ) {
+            $plugin_source = trailingslashit( $source ) . $this->install_subdirectory;
 
-		return trailingslashit( $new_source );
-	}
+            if ( ! $wp_filesystem->is_dir( $plugin_source ) ) {
+                return new WP_Error(
+                    'h2wp_subdir_not_found',
+                    sprintf(
+                        /* translators: %s: subdirectory path */
+                        __( 'Plugin subdirectory "%s" not found in the downloaded zip.', 'hub2wp' ),
+                        $this->install_subdirectory
+                    )
+                );
+            }
+
+            // Move just the plugin folder out of the repo zip
+            if ( ! $wp_filesystem->move( untrailingslashit( $plugin_source ), $final_dest ) ) {
+                return new WP_Error(
+                    'h2wp_rename_error',
+                    __( 'Could not extract plugin subdirectory from the repository zip.', 'hub2wp' )
+                );
+            }
+
+            // Clean up the rest of the extracted repo
+            $wp_filesystem->delete( untrailingslashit( $source ), true );
+
+            return trailingslashit( $final_dest );
+        }
+
+        // Single repo: just rename the GitHub hash folder to the repo slug
+        if ( trailingslashit( $final_dest ) === trailingslashit( $source ) ) {
+            return $source;
+        }
+
+        if ( ! $wp_filesystem->move( untrailingslashit( $source ), $final_dest ) ) {
+            return new WP_Error(
+                'h2wp_rename_error',
+                sprintf(
+                    /* translators: 1: extracted folder, 2: expected folder */
+                    __( 'Could not rename extracted folder from "%1$s" to "%2$s".', 'hub2wp' ),
+                    basename( $source ),
+                    $this->install_target_folder
+                )
+            );
+        }
+
+        return trailingslashit( $final_dest );
+    }
 }

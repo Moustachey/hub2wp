@@ -594,43 +594,67 @@ class H2WP_Admin_Page {
 		$items  = array();
 		$errors = array();
 
-		foreach ( $private_repos as $repo_key => $repo_data ) {
-			list( $owner, $repo ) = explode( '/', $repo_key, 2 );
+		$repo_details_cache = array(); // avoid duplicate API calls for monorepo siblings
 
-			$repo_details = $api->get_private_repo_details( $owner, $repo );
+        foreach ( $private_repos as $repo_key => $repo_data ) {
+            // Use stored owner/repo — always correct even for 3-part monorepo keys.
+            // Fall back to key-splitting only for legacy entries that lack these fields.
+            $owner        = isset( $repo_data['owner'] ) && $repo_data['owner'] ? $repo_data['owner'] : '';
+            $repo         = isset( $repo_data['repo'] )  && $repo_data['repo']  ? $repo_data['repo']  : '';
+            $subdirectory = isset( $repo_data['subdirectory'] ) ? $repo_data['subdirectory'] : '';
 
-			if ( is_wp_error( $repo_details ) ) {
-				$errors[] = array(
-					'repo'  => $repo_key,
-					'error' => $repo_details->get_error_message(),
-				);
-				continue;
-			}
+            if ( empty( $owner ) || empty( $repo ) ) {
+                $parts = explode( '/', $repo_key );
+                $owner = $parts[0];
+                $repo  = isset( $parts[1] ) ? $parts[1] : '';
+            }
 
-			// Transform API response to match search results format
-			$items[] = array(
-				'id'                => $repo_details['id'],
-				'name'              => $repo_details['name'],
-				'full_name'         => $repo_details['full_name'],
-				'description'       => isset( $repo_details['description'] ) ? $repo_details['description'] : '',
-				'owner'             => array(
-					'login'      => $repo_details['owner']['login'],
-					'avatar_url' => $repo_details['owner']['avatar_url'],
-					'html_url'   => $repo_details['owner']['html_url'],
-				),
-				'stargazers_count'  => $repo_details['stargazers_count'],
-				'forks_count'       => $repo_details['forks_count'],
-				'watchers_count'    => $repo_details['watchers_count'],
-				'open_issues_count' => $repo_details['open_issues_count'],
-				'updated_at'        => $repo_details['updated_at'],
-				'created_at'        => $repo_details['created_at'],
-				'html_url'          => $repo_details['html_url'],
-				'homepage'          => isset( $repo_details['homepage'] ) ? $repo_details['homepage'] : '',
-				'topics'            => isset( $repo_details['topics'] ) ? $repo_details['topics'] : array(),
-				'language'          => isset( $repo_details['language'] ) ? $repo_details['language'] : '',
-				'private'           => true,
-			);
-		}
+            $cache_key = $owner . '/' . $repo;
+
+            // Fetch each underlying repo only once even when multiple plugins share it
+            if ( ! isset( $repo_details_cache[ $cache_key ] ) ) {
+                $repo_details_cache[ $cache_key ] = $api->get_private_repo_details( $owner, $repo );
+            }
+            $repo_details = $repo_details_cache[ $cache_key ];
+
+            if ( is_wp_error( $repo_details ) ) {
+                $errors[] = array(
+                    'repo'  => $repo_key,
+                    'error' => $repo_details->get_error_message(),
+                );
+                continue;
+            }
+
+            // For monorepo plugins use the plugin name; otherwise use the repo name
+            $plugin_name = ! empty( $subdirectory )
+                ? ( isset( $repo_data['name'] ) && $repo_data['name'] ? $repo_data['name'] : basename( $subdirectory ) )
+                : $repo_details['name'];
+
+            $items[] = array(
+                'id'                => $repo_details['id'],
+                'name'              => $repo_details['name'],   // actual GitHub repo name (used for API calls)
+                'plugin_name'       => $plugin_name,            // display name on the card
+                'subdirectory'      => $subdirectory,           // empty string for single-repo plugins
+                'full_name'         => $repo_details['full_name'],
+                'description'       => isset( $repo_details['description'] ) ? $repo_details['description'] : '',
+                'owner'             => array(
+                    'login'      => $repo_details['owner']['login'],
+                    'avatar_url' => $repo_details['owner']['avatar_url'],
+                    'html_url'   => $repo_details['owner']['html_url'],
+                ),
+                'stargazers_count'  => $repo_details['stargazers_count'],
+                'forks_count'       => $repo_details['forks_count'],
+                'watchers_count'    => $repo_details['watchers_count'],
+                'open_issues_count' => $repo_details['open_issues_count'],
+                'updated_at'        => $repo_details['updated_at'],
+                'created_at'        => $repo_details['created_at'],
+                'html_url'          => $repo_details['html_url'],
+                'homepage'          => isset( $repo_details['homepage'] ) ? $repo_details['homepage'] : '',
+                'topics'            => isset( $repo_details['topics'] ) ? $repo_details['topics'] : array(),
+                'language'          => isset( $repo_details['language'] ) ? $repo_details['language'] : '',
+                'private'           => true,
+            );
+        }
 
 		return array(
 			'items'       => $items,
@@ -847,10 +871,12 @@ class H2WP_Admin_Page {
 	 * @param string $repo_type  Repository type.
 	 */
 	private static function render_plugin_card( $item, $is_private = false, $repo_type = 'plugin' ) {
-		$name = $item['name'];
-		$display_name = ucwords( str_replace( array( '-', 'wp', 'wordpress', 'seo' ), array( ' ', 'WP', 'WordPress', 'SEO' ), $name ) );
-		$description = isset( $item['description'] ) ? $item['description'] : '';
-		$owner = isset( $item['owner']['login'] ) ? $item['owner']['login'] : '';
+        $name         = $item['name'];
+        $subdirectory = isset( $item['subdirectory'] ) ? $item['subdirectory'] : '';
+        $plugin_name  = isset( $item['plugin_name'] ) && $item['plugin_name'] ? $item['plugin_name'] : $name;
+        $display_name = ucwords( str_replace( array( '-', 'wp', 'wordpress', 'seo' ), array( ' ', 'WP', 'WordPress', 'SEO' ), $plugin_name ) );
+        $description  = isset( $item['description'] ) ? $item['description'] : '';
+        $owner        = isset( $item['owner']['login'] ) ? $item['owner']['login'] : '';
 		$avatar = isset( $item['owner']['avatar_url'] ) ? $item['owner']['avatar_url'] : '';
 		$stars = isset( $item['stargazers_count'] ) ? number_format( $item['stargazers_count'] ) : 0;
 		$forks = isset( $item['forks_count'] ) ? number_format( $item['forks_count'] ) : 0;
@@ -861,7 +887,7 @@ class H2WP_Admin_Page {
 		echo '<div class="h2wp-plugin-icon">';
 		if ( $avatar ) {
 			// Add data attributes for AJAX.
-			echo '<img src="' . esc_url( $avatar ) . '" alt="" class="h2wp-plugin-thumbnail" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="' . esc_attr( $repo_type ) . '" style="cursor:pointer;" />';
+			echo '<img src="' . esc_url( $avatar ) . '" alt="" class="h2wp-plugin-thumbnail" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="' . esc_attr( $repo_type ) . '" style="cursor:pointer;" />';
 		} else {
 			echo '<div class="h2wp-plugin-icon-placeholder"></div>';
 		}
@@ -869,7 +895,7 @@ class H2WP_Admin_Page {
 
 		echo '<div class="h2wp-plugin-info">';
 		// Make plugin name clickable for modal.
-		echo '<h3 class="h2wp-plugin-name" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="' . esc_attr( $repo_type ) . '" style="cursor:pointer;">' . esc_html( $display_name ) . '</h3>';
+		echo '<h3 class="h2wp-plugin-name" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="' . esc_attr( $repo_type ) . '" style="cursor:pointer;">' . esc_html( $display_name ) . '</h3>';
 		echo '<div class="h2wp-plugin-author">By <a href="https://github.com/' . esc_attr( $owner ) . '">' . esc_html( $owner ) . '</a></div>';
 		
 		// Add private badge if applicable
@@ -884,14 +910,14 @@ class H2WP_Admin_Page {
 
 		echo '<div class="h2wp-plugin-actions">';
 		if ( self::is_repo_installed( $owner, $name, $repo_type ) ) {
-			echo '<a href="#" class="h2wp-button h2wp-button-disabled h2wp-install-plugin" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="' . esc_attr( $repo_type ) . '" disabled>' . esc_html__( 'Installed', 'hub2wp' ) . '</a>';
+			echo '<a href="#" class="h2wp-button h2wp-button-disabled h2wp-install-plugin" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="' . esc_attr( $repo_type ) . '" disabled>' . esc_html__( 'Installed', 'hub2wp' ) . '</a>';
 		} else {
-			echo '<a href="#" class="h2wp-button h2wp-button-secondary h2wp-install-plugin" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="' . esc_attr( $repo_type ) . '">' . esc_html__( 'Install Now', 'hub2wp' ) . '</a>';
-			echo '<a href="#" class="h2wp-button h2wp-button-secondary h2wp-activate-plugin h2wp-hidden" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="' . esc_attr( $repo_type ) . '">' . esc_html__( 'Activate', 'hub2wp' ) . '</a>';
+			echo '<a href="#" class="h2wp-button h2wp-button-secondary h2wp-install-plugin" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="' . esc_attr( $repo_type ) . '">' . esc_html__( 'Install Now', 'hub2wp' ) . '</a>';
+            echo '<a href="#" class="h2wp-button h2wp-button-secondary h2wp-activate-plugin h2wp-hidden" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="' . esc_attr( $repo_type ) . '">' . esc_html__( 'Activate', 'hub2wp' ) . '</a>';
 		}
 
 		// Add data attributes for "More Details" link.
-		echo '<a href="' . esc_url( self::get_repo_details_url( $owner, $name, $repo_type ) ) . '" class="h2wp-more-details-link" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="' . esc_attr( $repo_type ) . '">' . esc_html__( 'More Details', 'hub2wp' ) . '</a>';
+		echo '<a href="' . esc_url( self::get_repo_details_url( $owner, $name, $repo_type ) ) . '" class="h2wp-more-details-link" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="' . esc_attr( $repo_type ) . '">' . esc_html__( 'More Details', 'hub2wp' ) . '</a>';
 		echo '</div>';
 
 		echo '<div class="h2wp-plugin-meta">';
@@ -1040,8 +1066,12 @@ class H2WP_Admin_Page {
 	 * Enqueue admin assets.
 	 */
 	public static function enqueue_assets( $hook ) {
-		if ( 'plugins_page_h2wp-plugin-browser' === $hook || 'appearance_page_h2wp-theme-browser' === $hook ) {
-			$repo_type = ( 'appearance_page_h2wp-theme-browser' === $hook ) ? 'theme' : 'plugin';
+		$is_plugin_browser = 'plugins_page_h2wp-plugin-browser' === $hook;
+		$is_theme_browser  = 'appearance_page_h2wp-theme-browser' === $hook;
+		$is_settings_page  = 'settings_page_h2wp_settings_page' === $hook;
+
+		if ( $is_plugin_browser || $is_theme_browser || $is_settings_page ) {
+			$repo_type = $is_theme_browser ? 'theme' : 'plugin';
 
 			wp_enqueue_style( 'h2wp-admin-styles', H2WP_PLUGIN_URL . 'assets/css/admin-styles.css', array(), H2WP_VERSION );
 			wp_enqueue_script( 'h2wp-admin-scripts', H2WP_PLUGIN_URL . 'assets/js/admin-scripts.js', array( 'jquery' ), H2WP_VERSION, true );
@@ -1052,8 +1082,8 @@ class H2WP_Admin_Page {
 				'nonce'     => wp_create_nonce( 'h2wp_plugin_details_nonce' ),
 				'repo_type' => $repo_type,
 			) );
-			}
 		}
+	}
 
 	/**
 	 * Display a notice if the rate limit is low.
