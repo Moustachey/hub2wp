@@ -1077,10 +1077,19 @@ class H2WP_Admin_Page {
 			wp_enqueue_script( 'h2wp-admin-scripts', H2WP_PLUGIN_URL . 'assets/js/admin-scripts.js', array( 'jquery' ), H2WP_VERSION, true );
 
 			// Localize script with AJAX URL and nonce.
+			$monitored_plugins = get_option( 'h2wp_plugins', array() );
+			$monitored_subdirs = array();
+			foreach ( $monitored_plugins as $data ) {
+				if ( ! empty( $data['subdirectory'] ) ) {
+					$monitored_subdirs[] = $data['subdirectory'];
+				}
+			}
+
 			wp_localize_script( 'h2wp-admin-scripts', 'h2wp_ajax_object', array(
-				'ajax_url'  => admin_url( 'admin-ajax.php' ),
-				'nonce'     => wp_create_nonce( 'h2wp_plugin_details_nonce' ),
-				'repo_type' => $repo_type,
+				'ajax_url'          => admin_url( 'admin-ajax.php' ),
+				'nonce'             => wp_create_nonce( 'h2wp_plugin_details_nonce' ),
+				'repo_type'         => $repo_type,
+				'monitored_subdirs' => $monitored_subdirs,
 			) );
 		}
 	}

@@ -444,16 +444,29 @@ jQuery(document).ready(function($) {
             html += '</label>';
             html += '<div id="h2wp-plugin-checklist" style="margin:0 0 12px;">';
 
+        var availableCount = 0;
         plugins.forEach(function(plugin) {
-            html += '<label style="display:block;margin-bottom:6px;">'
-                + '<input type="checkbox" class="h2wp-monorepo-plugin-cb" value="' + plugin.subdirectory + '" checked /> '
-                + '<strong>' + plugin.slug + '</strong> '
-                + '<span style="color:#646970;font-size:12px;">(' + plugin.subdirectory + ')</span>'
-                + '</label>';
+            var monitored = h2wp_ajax_object.monitored_subdirs &&
+                            h2wp_ajax_object.monitored_subdirs.indexOf( plugin.subdirectory ) !== -1;
+            if ( monitored ) {
+                html += '<label style="display:block;margin-bottom:6px;opacity:0.55;cursor:default;">'
+                    + '<input type="checkbox" class="h2wp-monorepo-plugin-cb" value="' + plugin.subdirectory + '" disabled /> '
+                    + '<strong>' + plugin.slug + '</strong> '
+                    + '<span style="color:#646970;font-size:12px;">(' + plugin.subdirectory + ')</span>'
+                    + ' <em style="color:#2271b1;font-size:12px;">— Already Monitoring</em>'
+                    + '</label>';
+            } else {
+                availableCount++;
+                html += '<label style="display:block;margin-bottom:6px;">'
+                    + '<input type="checkbox" class="h2wp-monorepo-plugin-cb" value="' + plugin.subdirectory + '" checked /> '
+                    + '<strong>' + plugin.slug + '</strong> '
+                    + '<span style="color:#646970;font-size:12px;">(' + plugin.subdirectory + ')</span>'
+                    + '</label>';
+            }
         });
 
         html += '</div>';
-        html += '<button type="button" id="h2wp-add-selected-plugins" class="button button-primary">Add Selected Plugins (' + plugins.length + ')</button> ';
+        html += '<button type="button" id="h2wp-add-selected-plugins" class="button button-primary">Add Selected Plugins (' + availableCount + ')</button> ';
         html += '<button type="button" id="h2wp-cancel-picker" class="button">Cancel</button>';
         html += '<div id="h2wp-add-repo-status" style="margin-top:10px;"></div>';
 
@@ -461,15 +474,15 @@ jQuery(document).ready(function($) {
 
         // Select all / deselect all toggle
         $('#h2wp-select-all-plugins').on('change', function() {
-            $('.h2wp-monorepo-plugin-cb').prop('checked', $(this).is(':checked'));
-            var checked = $('.h2wp-monorepo-plugin-cb:checked').length;
+            $('.h2wp-monorepo-plugin-cb:not(:disabled)').prop('checked', $(this).is(':checked'));
+            var checked = $('.h2wp-monorepo-plugin-cb:not(:disabled):checked').length;
             $('#h2wp-add-selected-plugins').text( 'Add Selected Plugins (' + checked + ')' );
         });
 
         // Keep "select all" in sync when individual boxes are changed
-        $(document).on('change', '.h2wp-monorepo-plugin-cb', function() {
-            var total   = $('.h2wp-monorepo-plugin-cb').length;
-            var checked = $('.h2wp-monorepo-plugin-cb:checked').length;
+        $(document).on('change', '.h2wp-monorepo-plugin-cb:not(:disabled)', function() {
+            var total   = $('.h2wp-monorepo-plugin-cb:not(:disabled)').length;
+            var checked = $('.h2wp-monorepo-plugin-cb:not(:disabled):checked').length;
             $('#h2wp-select-all-plugins').prop('checked', total === checked)
                                         .prop('indeterminate', checked > 0 && checked < total);
             $('#h2wp-add-selected-plugins').text( 'Add Selected Plugins (' + checked + ')' );
