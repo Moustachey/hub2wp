@@ -355,8 +355,17 @@ jQuery(document).ready(function($) {
         openRepositoryDetails(owner, repo, repoType, false);
     }());
 
-    // Monorepo Detection — intercept "Add Repository" form
+    // Ellipsis text animation to show the user the action is still working
+    function h2wpStartDotAnimation( $el, baseText ) {
+        var dots = 1;
+        $el.text( baseText + '.' );
+        return setInterval( function() {
+            dots = ( dots % 3 ) + 1;
+            $el.text( baseText + new Array( dots + 1 ).join( '.' ) );
+        }, 500 );
+    }
 
+    // Monorepo Detection — intercept "Add Repository" form
     var $addRepoForm = $('input#h2wp_private_repo_input').closest('form');
     var $repoInput   = $('#h2wp_private_repo_input');
 
@@ -386,7 +395,8 @@ jQuery(document).ready(function($) {
             var $btn    = $addRepoForm.find('button[type="submit"]');
             var $picker = $('#h2wp-monorepo-picker');
 
-            $btn.prop('disabled', true).text('Detecting...');
+            $btn.prop('disabled', true);
+            var detectInterval = h2wpStartDotAnimation( $btn, 'Detecting All Plugins' );
             $picker.hide().empty();
 
             $.ajax({
@@ -417,6 +427,7 @@ jQuery(document).ready(function($) {
                     alert( h2wp_ajax_object.error_message || 'An error occurred.' );
                 },
                 complete: function() {
+                    clearInterval( detectInterval );
                     $btn.prop('disabled', false).text('Add Repository');
                 }
             });
@@ -429,7 +440,7 @@ jQuery(document).ready(function($) {
         var html  = '<p><strong>Monorepo detected</strong> — ';
             html += plugins.length + ' plugin(s) found. Select which to monitor:</p>';
             html += '<label style="display:block;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #ddd;">';
-            html += '<input type="checkbox" id="h2wp-select-all-plugins" checked /> <strong>Select all / Deselect all</strong>';
+            html += '<input type="checkbox" id="h2wp-select-all-plugins" checked /> <strong>Select All / Deselect All</strong>';
             html += '</label>';
             html += '<div id="h2wp-plugin-checklist" style="margin:0 0 12px;">';
 
@@ -442,7 +453,7 @@ jQuery(document).ready(function($) {
         });
 
         html += '</div>';
-        html += '<button type="button" id="h2wp-add-selected-plugins" class="button button-primary">Add Selected Plugins</button> ';
+        html += '<button type="button" id="h2wp-add-selected-plugins" class="button button-primary">Add Selected Plugins (' + plugins.length + ')</button> ';
         html += '<button type="button" id="h2wp-cancel-picker" class="button">Cancel</button>';
         html += '<div id="h2wp-add-repo-status" style="margin-top:10px;"></div>';
 
@@ -451,6 +462,8 @@ jQuery(document).ready(function($) {
         // Select all / deselect all toggle
         $('#h2wp-select-all-plugins').on('change', function() {
             $('.h2wp-monorepo-plugin-cb').prop('checked', $(this).is(':checked'));
+            var checked = $('.h2wp-monorepo-plugin-cb:checked').length;
+            $('#h2wp-add-selected-plugins').text( 'Add Selected Plugins (' + checked + ')' );
         });
 
         // Keep "select all" in sync when individual boxes are changed
@@ -459,6 +472,7 @@ jQuery(document).ready(function($) {
             var checked = $('.h2wp-monorepo-plugin-cb:checked').length;
             $('#h2wp-select-all-plugins').prop('checked', total === checked)
                                         .prop('indeterminate', checked > 0 && checked < total);
+            $('#h2wp-add-selected-plugins').text( 'Add Selected Plugins (' + checked + ')' );
         });
 
         $('#h2wp-cancel-picker').on('click', function() {
@@ -481,15 +495,17 @@ jQuery(document).ready(function($) {
             var branch    = $.trim( $('#h2wp_branch_input').val() );
             var prioritize = $('#h2wp_prioritize_releases').is(':checked') ? '1' : '0';
 
-            $btn.prop('disabled', true).text('Adding...');
+            $btn.prop('disabled', true);
+            var addInterval = h2wpStartDotAnimation( $btn, 'Adding Selected Plugins' );
             $status.empty();
 
-            h2wpAddPluginsSequentially( selected, 0, owner, repo, branch, prioritize, $btn, $status, 0 );
+            h2wpAddPluginsSequentially( selected, 0, owner, repo, branch, prioritize, $btn, $status, 0, addInterval );
         });
     }
 
-    function h2wpAddPluginsSequentially( subdirs, index, owner, repo, branch, prioritize, $btn, $status, successCount ) {
+    function h2wpAddPluginsSequentially( subdirs, index, owner, repo, branch, prioritize, $btn, $status, successCount, dotInterval ) {
         if ( index >= subdirs.length ) {
+            if ( dotInterval ) { clearInterval( dotInterval ); }
             // Auto-redirect back to this page with a success param for the WP notice
             var base = window.location.href.split('&h2wp_added=')[0];
             window.location.href = base + '&h2wp_added=' + successCount;
@@ -523,7 +539,7 @@ jQuery(document).ready(function($) {
                 $status.append('<p style="color:#d63638;">&#10007; Error adding <strong>' + slug + '</strong></p>');
             },
             complete: function() {
-                h2wpAddPluginsSequentially( subdirs, index + 1, owner, repo, branch, prioritize, $btn, $status, successCount );
+                h2wpAddPluginsSequentially( subdirs, index + 1, owner, repo, branch, prioritize, $btn, $status, successCount, dotInterval );
             }
         });
     }
