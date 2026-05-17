@@ -70,7 +70,7 @@ class H2WP_Repo_Manager {
 
         $installer = new H2WP_Plugin_Installer();
         $result    = ( 'theme' === $repo_type )
-            ? $installer->install_theme( $download_url, $token )
+            ? $installer->install_theme( $download_url, $token, $subdirectory )
             : $installer->install_plugin( $download_url, $token, $subdirectory );
 
 		if ( is_wp_error( $result ) ) {

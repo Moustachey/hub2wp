@@ -885,7 +885,7 @@ class H2WP_GitHub_API {
 		}
 
 		if ( 'theme' === $repo_type ) {
-			$style_content = $this->fetch_theme_style_content( $owner, $repo, $ref );
+            $style_content = $this->fetch_theme_style_content( $owner, $repo, $ref, $subdirectory );
 			if ( is_wp_error( $style_content ) ) {
 				$error_data = array(
 					'is_compatible' => false,
@@ -1006,8 +1006,17 @@ class H2WP_GitHub_API {
 	 * @param string $branch Optional branch name.
 	 * @return string|WP_Error Theme style.css content or error.
 	 */
-	private function fetch_theme_style_content( $owner, $repo, $branch = '' ) {
+	private function fetch_theme_style_content( $owner, $repo, $branch = '', $path_prefix = '' ) {
 		$filenames = array( 'style.css', 'STYLE.CSS' );
+
+		if ( ! empty( $path_prefix ) ) {
+			$filenames = array_map(
+				function( $f ) use ( $path_prefix ) {
+					return trailingslashit( $path_prefix ) . $f;
+				},
+				$filenames
+			);
+		}
 
 		foreach ( $filenames as $filename ) {
 			$url      = $this->base_url . "/repos/{$owner}/{$repo}/contents/{$filename}";
@@ -1172,16 +1181,17 @@ class H2WP_GitHub_API {
 	 * @param string $branch Optional branch name.
 	 * @return array|WP_Error Parsed headers or error.
 	 */
-	public function get_theme_headers( $owner, $repo, $branch = '', $prioritize_releases = true, $source_context = null ) {
+	public function get_theme_headers( $owner, $repo, $branch = '', $prioritize_releases = true, $source_context = null, $subdirectory = '' ) {
 		$source_context = is_array( $source_context ) ? $source_context : $this->resolve_version_source( $owner, $repo, $branch, $prioritize_releases );
 		$ref            = isset( $source_context['ref'] ) ? (string) $source_context['ref'] : $branch;
-		$cache_key      = 'theme_headers_' . $owner . '_' . $repo . '_' . $this->get_branch_cache_key_segment( $ref ) . '_' . ( ! empty( $source_context['source'] ) ? $source_context['source'] : 'branch' );
+		$subdir_key     = ! empty( $subdirectory ) ? '_' . md5( $subdirectory ) : '';
+		$cache_key      = 'theme_headers_' . $owner . '_' . $repo . '_' . $this->get_branch_cache_key_segment( $ref ) . '_' . ( ! empty( $source_context['source'] ) ? $source_context['source'] : 'branch' ) . $subdir_key;
 		$cached    = H2WP_Cache::get( $cache_key );
 		if ( false !== $cached ) {
 			return $cached;
 		}
 
-		$style_content = $this->fetch_theme_style_content( $owner, $repo, $ref );
+		$style_content = $this->fetch_theme_style_content( $owner, $repo, $ref, $subdirectory );
 		if ( is_wp_error( $style_content ) ) {
 			return $style_content;
 		}
@@ -1326,8 +1336,9 @@ class H2WP_GitHub_API {
 	 *   plugins: array of { slug, subdirectory, main_file } (monorepo only)
 	 * }
 	 */
-	public function detect_repo_type( $owner, $repo, $branch = '' ) {
-		$cache_key = 'repo_type_' . $owner . '_' . $repo . '_' . $this->get_branch_cache_key_segment( $branch );
+	public function detect_repo_type( $owner, $repo, $branch = '', $repo_type = 'plugin' ) {
+    $repo_type = in_array( $repo_type, array( 'plugin', 'theme' ), true ) ? $repo_type : 'plugin';
+    $cache_key = 'repo_type_' . $repo_type . '_' . $owner . '_' . $repo . '_' . $this->get_branch_cache_key_segment( $branch );
 		$cached    = H2WP_Cache::get( $cache_key );
 		if ( false !== $cached ) {
 			return $cached;
@@ -1338,18 +1349,29 @@ class H2WP_GitHub_API {
 			return $root_contents;
 		}
 
-		// Check repo root for a plugin header
-		foreach ( $root_contents as $item ) {
-			if ( 'file' !== $item['type'] || substr( $item['name'], -4 ) !== '.php' ) {
-				continue;
-			}
-			$content = $this->get_file_content( $owner, $repo, $item['path'], $branch );
-			if ( ! is_wp_error( $content ) && $this->has_plugin_header( $content ) ) {
-				$result = array( 'type' => 'single', 'plugins' => array() );
-				H2WP_Cache::set( $cache_key, $result );
-				return $result;
-			}
-		}
+		// Check repo root for a plugin/theme header
+        foreach ( $root_contents as $item ) {
+            if ( 'file' !== $item['type'] ) {
+                continue;
+            }
+            if ( 'theme' === $repo_type ) {
+                if ( strtolower( $item['name'] ) !== 'style.css' ) { continue; }
+                $content = $this->get_file_content( $owner, $repo, $item['path'], $branch );
+                if ( ! is_wp_error( $content ) && $this->has_theme_header( $content ) ) {
+                    $result = array( 'type' => 'single', 'plugins' => array() );
+                    H2WP_Cache::set( $cache_key, $result );
+                    return $result;
+                }
+            } else {
+                if ( substr( $item['name'], -4 ) !== '.php' ) { continue; }
+                $content = $this->get_file_content( $owner, $repo, $item['path'], $branch );
+                if ( ! is_wp_error( $content ) && $this->has_plugin_header( $content ) ) {
+                    $result = array( 'type' => 'single', 'plugins' => array() );
+                    H2WP_Cache::set( $cache_key, $result );
+                    return $result;
+                }
+            }
+        }
 
 		// Scan one level of subdirectories.
 		// If a subdirectory contains no PHP files but only more subdirectories,
@@ -1366,23 +1388,28 @@ class H2WP_GitHub_API {
 				continue;
 			}
 
-			// Check whether this subdir directly contains a plugin PHP file
-			$found_here = false;
-			foreach ( $subdir_contents as $file ) {
-				if ( 'file' !== $file['type'] || substr( $file['name'], -4 ) !== '.php' ) {
-					continue;
-				}
-				$content = $this->get_file_content( $owner, $repo, $file['path'], $branch );
-				if ( ! is_wp_error( $content ) && $this->has_plugin_header( $content ) ) {
-					$found_plugins[] = array(
-						'slug'         => $item['name'],
-						'subdirectory' => $item['path'],
-						'main_file'    => $file['path'],
-					);
-					$found_here = true;
-					break;
-				}
-			}
+			// Check whether this subdir directly contains a plugin/theme file
+            $found_here = false;
+            foreach ( $subdir_contents as $file ) {
+                if ( 'file' !== $file['type'] ) { continue; }
+                $is_match = ( 'theme' === $repo_type )
+                    ? strtolower( $file['name'] ) === 'style.css'
+                    : substr( $file['name'], -4 ) === '.php';
+                if ( ! $is_match ) { continue; }
+                $content = $this->get_file_content( $owner, $repo, $file['path'], $branch );
+                $has_header = ( 'theme' === $repo_type )
+                    ? $this->has_theme_header( $content )
+                    : $this->has_plugin_header( $content );
+                if ( ! is_wp_error( $content ) && $has_header ) {
+                    $found_plugins[] = array(
+                        'slug'         => $item['name'],
+                        'subdirectory' => $item['path'],
+                        'main_file'    => $file['path'],
+                    );
+                    $found_here = true;
+                    break;
+                }
+            }
 
 			if ( $found_here ) {
 				continue;
@@ -1401,19 +1428,24 @@ class H2WP_GitHub_API {
 				}
 
 				foreach ( $deep_contents as $file ) {
-					if ( 'file' !== $file['type'] || substr( $file['name'], -4 ) !== '.php' ) {
-						continue;
-					}
-					$content = $this->get_file_content( $owner, $repo, $file['path'], $branch );
-					if ( ! is_wp_error( $content ) && $this->has_plugin_header( $content ) ) {
-						$found_plugins[] = array(
-							'slug'         => $subitem['name'],
-							'subdirectory' => $subitem['path'],
-							'main_file'    => $file['path'],
-						);
-						break;
-					}
-				}
+                    if ( 'file' !== $file['type'] ) { continue; }
+                    $is_match = ( 'theme' === $repo_type )
+                        ? strtolower( $file['name'] ) === 'style.css'
+                        : substr( $file['name'], -4 ) === '.php';
+                    if ( ! $is_match ) { continue; }
+                    $content = $this->get_file_content( $owner, $repo, $file['path'], $branch );
+                    $has_header = ( 'theme' === $repo_type )
+                        ? $this->has_theme_header( $content )
+                        : $this->has_plugin_header( $content );
+                    if ( ! is_wp_error( $content ) && $has_header ) {
+                        $found_plugins[] = array(
+                            'slug'         => $subitem['name'],
+                            'subdirectory' => $subitem['path'],
+                            'main_file'    => $file['path'],
+                        );
+                        break;
+                    }
+                }
 			}
 		}
 
@@ -1485,6 +1517,16 @@ class H2WP_GitHub_API {
 	 */
 	public function has_plugin_header( $content ) {
 		return false !== strpos( $content, 'Plugin Name:' );
+	}
+
+	/**
+	 * Check whether CSS content contains a WordPress theme header.
+	 *
+	 * @param string $content File content.
+	 * @return bool
+	 */
+	public function has_theme_header( $content ) {
+		return false !== strpos( $content, 'Theme Name:' );
 	}
 
 	/**

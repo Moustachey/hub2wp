@@ -89,7 +89,7 @@ class H2WP_Plugin_Installer {
 	 * @param string $access_token Optional GitHub access token for private repos.
 	 * @return bool|WP_Error True on success, WP_Error on failure.
 	 */
-	public function install_theme( $download_url, $access_token = '' ) {
+	public function install_theme( $download_url, $access_token = '', $subdirectory = '' ) {
 		require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
 
 		$upgrader = new Theme_Upgrader( new H2WP_Silent_Installer_Skin() );
@@ -105,17 +105,21 @@ class H2WP_Plugin_Installer {
 			$package = $download_url;
 		}
 
-		$this->install_target_folder = $this->get_repo_slug_from_download_url( $download_url );
-		add_filter( 'upgrader_source_selection', array( $this, 'normalize_install_source_folder' ), 10, 4 );
+		$this->install_subdirectory  = trim( (string) $subdirectory, '/' );
+        $this->install_target_folder = ! empty( $subdirectory )
+            ? basename( $subdirectory )
+            : $this->get_repo_slug_from_download_url( $download_url );
+        add_filter( 'upgrader_source_selection', array( $this, 'normalize_install_source_folder' ), 10, 4 );
 
 		ob_start();
 		$result = $upgrader->install( $package );
 		ob_end_clean();
 		remove_filter( 'upgrader_source_selection', array( $this, 'normalize_install_source_folder' ), 10 );
-		$this->install_target_folder = '';
+        $this->install_target_folder = '';
+        $this->install_subdirectory  = '';
 
-		// Always clean up the temp file.
-		if ( null !== $local_file && file_exists( $local_file ) ) {
+        // Always clean up the temp file.
+        if ( null !== $local_file && file_exists( $local_file ) ) {
 			// phpcs:ignore -- WordPress.PHP.NoSilencedErrors.Discouraged & WordPress.WP.AlternativeFunctions.file_system_read_file -- We want to suppress errors here since the file might not exist or be deletable, and there's no real alternative function for this.
 			@unlink( $local_file );
 		}

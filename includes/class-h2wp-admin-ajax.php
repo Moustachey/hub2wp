@@ -316,8 +316,11 @@ class H2WP_Admin_Ajax {
 			wp_send_json_error( array( 'message' => __( 'Invalid parameters.', 'hub2wp' ) ) );
 		}
 
-		$api    = new H2WP_GitHub_API( H2WP_Settings::get_access_token() );
-		$result = $api->detect_repo_type( $owner, $repo );
+		$repo_type = isset( $_POST['repo_type'] ) ? sanitize_key( wp_unslash( $_POST['repo_type'] ) ) : 'plugin';
+        $repo_type = in_array( $repo_type, array( 'plugin', 'theme' ), true ) ? $repo_type : 'plugin';
+
+        $api    = new H2WP_GitHub_API( H2WP_Settings::get_access_token() );
+        $result = $api->detect_repo_type( $owner, $repo, '', $repo_type );
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
@@ -347,7 +350,10 @@ class H2WP_Admin_Ajax {
 			wp_send_json_error( array( 'message' => __( 'Invalid parameters.', 'hub2wp' ) ) );
 		}
 
-		$result = H2WP_Settings::add_repo_to_monitored( $owner, $repo, $branch, $prioritize, $subdirectory );
+		$repo_type_for_add = isset( $_POST['repo_type'] ) ? sanitize_key( wp_unslash( $_POST['repo_type'] ) ) : 'plugin';
+        $repo_type_for_add = in_array( $repo_type_for_add, array( 'plugin', 'theme' ), true ) ? $repo_type_for_add : 'plugin';
+
+        $result = H2WP_Settings::add_repo_to_monitored( $owner, $repo, $branch, $prioritize, $subdirectory, $repo_type_for_add );
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( array( 'message' => $result->get_error_message() ) );

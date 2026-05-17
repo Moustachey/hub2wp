@@ -801,8 +801,10 @@ class H2WP_Admin_Page {
 	 * @param bool  $is_private Whether this is a private repository.
 	 */
 	private static function render_theme_card( $item, $is_private = false ) {
-		$name         = $item['name'];
-		$display_name = ucwords( str_replace( array( '-', 'wp', 'wordpress', 'seo' ), array( ' ', 'WP', 'WordPress', 'SEO' ), $name ) );
+        $name         = $item['name'];
+        $subdirectory = isset( $item['subdirectory'] ) ? $item['subdirectory'] : '';
+        $plugin_name  = isset( $item['plugin_name'] ) && $item['plugin_name'] ? $item['plugin_name'] : $name;
+        $display_name = ucwords( str_replace( array( '-', 'wp', 'wordpress', 'seo' ), array( ' ', 'WP', 'WordPress', 'SEO' ), $plugin_name ) );
 		$description  = isset( $item['description'] ) ? $item['description'] : '';
 		$owner        = isset( $item['owner']['login'] ) ? $item['owner']['login'] : '';
 		$avatar       = isset( $item['owner']['avatar_url'] ) ? $item['owner']['avatar_url'] : '';
@@ -821,7 +823,7 @@ class H2WP_Admin_Page {
 		echo '</div>';
 
 		echo '<div class="h2wp-theme-header">';
-		echo '<h3 class="h2wp-theme-name"><a href="' . esc_url( self::get_repo_details_url( $owner, $name, 'theme' ) ) . '" class="h2wp-theme-name-link" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="theme">' . esc_html( $display_name ) . '</a></h3>';
+		echo '<h3 class="h2wp-theme-name"><a href="' . esc_url( self::get_repo_details_url( $owner, $name, 'theme' ) ) . '" class="h2wp-theme-name-link" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="theme">' . esc_html( $display_name ) . '</a></h3>';
 		echo '<span class="h2wp-theme-author-text">' . esc_html__( 'By', 'hub2wp' ) . ' <a href="https://github.com/' . esc_attr( $owner ) . '">' . esc_html( $owner ) . '</a></span>';
 		if ( $avatar ) {
 			echo '<img src="' . esc_url( $avatar ) . '" alt="" class="h2wp-theme-author-avatar" />';
@@ -831,12 +833,12 @@ class H2WP_Admin_Page {
 
 		echo '<div class="h2wp-theme-actions">';
 		if ( self::is_repo_installed( $owner, $name, 'theme' ) ) {
-			echo '<a href="#" class="h2wp-button h2wp-button-disabled h2wp-install-plugin" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="theme" disabled>' . esc_html__( 'Installed', 'hub2wp' ) . '</a>';
+			echo '<a href="#" class="h2wp-button h2wp-button-disabled h2wp-install-plugin" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="theme" disabled>' . esc_html__( 'Installed', 'hub2wp' ) . '</a>';
 		} else {
-			echo '<a href="#" class="h2wp-button h2wp-button-secondary h2wp-install-plugin" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="theme">' . esc_html__( 'Install Now', 'hub2wp' ) . '</a>';
-			echo '<a href="#" class="h2wp-button h2wp-button-secondary h2wp-activate-plugin h2wp-hidden" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="theme">' . esc_html__( 'Activate', 'hub2wp' ) . '</a>';
+			echo '<a href="#" class="h2wp-button h2wp-button-secondary h2wp-install-plugin" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="theme">' . esc_html__( 'Install Now', 'hub2wp' ) . '</a>';
+            echo '<a href="#" class="h2wp-button h2wp-button-secondary h2wp-activate-plugin h2wp-hidden" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="theme">' . esc_html__( 'Activate', 'hub2wp' ) . '</a>';
 		}
-		echo '<a href="' . esc_url( self::get_repo_details_url( $owner, $name, 'theme' ) ) . '" class="h2wp-more-details-link" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-type="theme">' . esc_html__( 'More Details', 'hub2wp' ) . '</a>';
+		echo '<a href="' . esc_url( self::get_repo_details_url( $owner, $name, 'theme' ) ) . '" class="h2wp-more-details-link" data-owner="' . esc_attr( $owner ) . '" data-repo="' . esc_attr( $name ) . '" data-subdirectory="' . esc_attr( $subdirectory ) . '" data-type="theme">' . esc_html__( 'More Details', 'hub2wp' ) . '</a>';
 		if ( $is_private ) {
 			echo '<span class="h2wp-private-badge">' . esc_html__( 'Private', 'hub2wp' ) . '</span>';
 		}
@@ -1085,12 +1087,21 @@ class H2WP_Admin_Page {
 				}
 			}
 
-			wp_localize_script( 'h2wp-admin-scripts', 'h2wp_ajax_object', array(
-				'ajax_url'          => admin_url( 'admin-ajax.php' ),
-				'nonce'             => wp_create_nonce( 'h2wp_plugin_details_nonce' ),
-				'repo_type'         => $repo_type,
-				'monitored_subdirs' => $monitored_subdirs,
-			) );
+			$monitored_themes       = get_option( 'h2wp_themes', array() );
+            $monitored_theme_subdirs = array();
+            foreach ( $monitored_themes as $data ) {
+                if ( ! empty( $data['subdirectory'] ) ) {
+                    $monitored_theme_subdirs[] = $data['subdirectory'];
+                }
+            }
+
+            wp_localize_script( 'h2wp-admin-scripts', 'h2wp_ajax_object', array(
+                'ajax_url'               => admin_url( 'admin-ajax.php' ),
+                'nonce'                  => wp_create_nonce( 'h2wp_plugin_details_nonce' ),
+                'repo_type'              => $repo_type,
+                'monitored_subdirs'      => $monitored_subdirs,
+                'monitored_theme_subdirs' => $monitored_theme_subdirs,
+            ) );
 		}
 	}
 

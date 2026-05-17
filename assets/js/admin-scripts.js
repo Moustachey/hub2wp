@@ -557,4 +557,186 @@ jQuery(document).ready(function($) {
         });
     }
 
+    // Monorepo Detection — intercept "Add Theme Repository" form
+    var $addThemeForm = $('input#h2wp_private_theme_repo_input').closest('form');
+    var $themeInput   = $('#h2wp_private_theme_repo_input');
+
+    if ( $addThemeForm.length && $themeInput.length ) {
+
+        $themeInput.closest('td').append('<div id="h2wp-monorepo-theme-picker" style="display:none;margin-top:12px;"></div>');
+
+        $addThemeForm.on('submit', function(e) {
+            var repoValue = $.trim( $themeInput.val() );
+            var parts     = repoValue.split('/');
+
+            if ( parts.length !== 2 || !parts[0] || !parts[1] ) {
+                return;
+            }
+
+            if ( $('#h2wp-theme-subdirectory-ready').val() === '1' ) {
+                return;
+            }
+
+            e.preventDefault();
+
+            var owner   = parts[0];
+            var repo    = parts[1];
+            var $btn    = $addThemeForm.find('button[type="submit"]');
+            var $picker = $('#h2wp-monorepo-theme-picker');
+
+            $btn.prop('disabled', true);
+            var detectInterval = h2wpStartDotAnimation( $btn, 'Detecting All Themes' );
+            $picker.hide().empty();
+
+            $.ajax({
+                url: h2wp_ajax_object.ajax_url,
+                method: 'POST',
+                data: {
+                    action:    'h2wp_detect_repo_type',
+                    nonce:     h2wp_ajax_object.nonce,
+                    owner:     owner,
+                    repo:      repo,
+                    repo_type: 'theme'
+                },
+                success: function(response) {
+                    if ( !response.success ) {
+                        alert( response.data.message || 'Could not detect repository type.' );
+                        return;
+                    }
+                    if ( 'single' === response.data.type ) {
+                        $addThemeForm.off('submit').submit();
+                        return;
+                    }
+                    h2wpRenderMonorepoThemePicker( response.data.plugins, owner, repo );
+                },
+                error: function() {
+                    alert( h2wp_ajax_object.error_message || 'An error occurred.' );
+                },
+                complete: function() {
+                    clearInterval( detectInterval );
+                    $btn.prop('disabled', false).text('Add Repository');
+                }
+            });
+        });
+    }
+
+    function h2wpRenderMonorepoThemePicker( themes, owner, repo ) {
+        var $picker = $('#h2wp-monorepo-theme-picker');
+        var monitoredThemeSubdirs = h2wp_ajax_object.monitored_theme_subdirs || [];
+
+        var html  = '<p><strong>Theme monorepo detected</strong> — ';
+            html += themes.length + ' theme(s) found. Select which to monitor:</p>';
+            html += '<label style="display:block;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #ddd;">';
+            html += '<input type="checkbox" id="h2wp-select-all-themes" checked /> <strong>Select All / Deselect All</strong>';
+            html += '</label>';
+            html += '<div id="h2wp-theme-checklist" style="margin:0 0 12px;">';
+
+        var availableCount = 0;
+        themes.forEach(function(theme) {
+            var monitored = monitoredThemeSubdirs.indexOf( theme.subdirectory ) !== -1;
+            if ( monitored ) {
+                html += '<label style="display:block;margin-bottom:6px;opacity:0.55;cursor:default;">'
+                    + '<input type="checkbox" class="h2wp-monorepo-theme-cb" value="' + theme.subdirectory + '" disabled /> '
+                    + '<strong>' + theme.slug + '</strong> '
+                    + '<span style="color:#646970;font-size:12px;">(' + theme.subdirectory + ')</span>'
+                    + ' <em style="color:#2271b1;font-size:12px;">— Already Monitoring</em>'
+                    + '</label>';
+            } else {
+                availableCount++;
+                html += '<label style="display:block;margin-bottom:6px;">'
+                    + '<input type="checkbox" class="h2wp-monorepo-theme-cb" value="' + theme.subdirectory + '" checked /> '
+                    + '<strong>' + theme.slug + '</strong> '
+                    + '<span style="color:#646970;font-size:12px;">(' + theme.subdirectory + ')</span>'
+                    + '</label>';
+            }
+        });
+
+        html += '</div>';
+        html += '<button type="button" id="h2wp-add-selected-themes" class="button button-primary">Add Selected Themes (' + availableCount + ')</button> ';
+        html += '<button type="button" id="h2wp-cancel-theme-picker" class="button">Cancel</button>';
+        html += '<div id="h2wp-add-theme-status" style="margin-top:10px;"></div>';
+
+        $picker.html(html).show();
+
+        $('#h2wp-select-all-themes').on('change', function() {
+            $('.h2wp-monorepo-theme-cb:not(:disabled)').prop('checked', $(this).is(':checked'));
+            var checked = $('.h2wp-monorepo-theme-cb:not(:disabled):checked').length;
+            $('#h2wp-add-selected-themes').text( 'Add Selected Themes (' + checked + ')' );
+        });
+
+        $(document).on('change', '.h2wp-monorepo-theme-cb:not(:disabled)', function() {
+            var total   = $('.h2wp-monorepo-theme-cb:not(:disabled)').length;
+            var checked = $('.h2wp-monorepo-theme-cb:not(:disabled):checked').length;
+            $('#h2wp-select-all-themes').prop('checked', total === checked)
+                                        .prop('indeterminate', checked > 0 && checked < total);
+            $('#h2wp-add-selected-themes').text( 'Add Selected Themes (' + checked + ')' );
+        });
+
+        $('#h2wp-cancel-theme-picker').on('click', function() {
+            $picker.hide().empty();
+        });
+
+        $('#h2wp-add-selected-themes').on('click', function() {
+            var selected = [];
+            $('.h2wp-monorepo-theme-cb:not(:disabled):checked').each(function() {
+                selected.push( $(this).val() );
+            });
+            if ( !selected.length ) {
+                alert('Please select at least one theme.');
+                return;
+            }
+            var $btn      = $(this);
+            var $status   = $('#h2wp-add-theme-status');
+            var branch    = $.trim( $('#h2wp_theme_branch_input').val() );
+            var prioritize = $('#h2wp_theme_prioritize_releases').is(':checked') ? '1' : '0';
+
+            $btn.prop('disabled', true);
+            var addInterval = h2wpStartDotAnimation( $btn, 'Adding Selected Themes' );
+            $status.empty();
+
+            h2wpAddThemesSequentially( selected, 0, owner, repo, branch, prioritize, $btn, $status, 0, addInterval );
+        });
+    }
+
+    function h2wpAddThemesSequentially( subdirs, index, owner, repo, branch, prioritize, $btn, $status, successCount, dotInterval ) {
+        if ( index >= subdirs.length ) {
+            if ( dotInterval ) { clearInterval( dotInterval ); }
+            var base = window.location.href.split('&h2wp_added=')[0];
+            window.location.href = base + '&h2wp_added=' + successCount;
+            return;
+        }
+
+        var subdirectory = subdirs[ index ];
+        var slug         = subdirectory.split('/').pop();
+
+        $.ajax({
+            url: h2wp_ajax_object.ajax_url,
+            method: 'POST',
+            data: {
+                action:              'h2wp_add_monitored_repo',
+                nonce:               h2wp_ajax_object.nonce,
+                owner:               owner,
+                repo:                repo,
+                branch:              branch,
+                prioritize_releases: prioritize,
+                subdirectory:        subdirectory,
+                repo_type:           'theme'
+            },
+            success: function(response) {
+                if ( response.success ) {
+                    $status.append('<p style="color:#00a32a;">&#10003; Added: <strong>' + slug + '</strong></p>');
+                    successCount++;
+                } else {
+                    $status.append('<p style="color:#d63638;">&#10007; ' + slug + ': ' + ( response.data.message || 'Unknown error' ) + '</p>');
+                }
+            },
+            error: function() {
+                $status.append('<p style="color:#d63638;">&#10007; Error adding <strong>' + slug + '</strong></p>');
+            },
+            complete: function() {
+                h2wpAddThemesSequentially( subdirs, index + 1, owner, repo, branch, prioritize, $btn, $status, successCount, dotInterval );
+            }
+        });
+    }
+
 });
