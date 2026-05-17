@@ -161,7 +161,7 @@ class H2WP_Settings {
 		$monitored_plugins = $tracked_service->get_tracked_plugins();
 		$count             = count( $monitored_plugins );
 		// Auto-expand if there are form submission notices so feedback is visible.
-		$expanded          = ! empty( get_settings_errors( 'h2wp_private_repos' ) );
+		$expanded          = true;
 		?>
 		<p style="margin:0;">
 			<strong><?php esc_html_e( 'Monitored Plugins', 'hub2wp' ); ?></strong>
@@ -254,7 +254,7 @@ class H2WP_Settings {
                                 <input type="checkbox" id="h2wp-select-all-monitored" />
                             </th>
                             <th><?php esc_html_e( 'Repository', 'hub2wp' ); ?></th>
-                            <th style="width:80px;max-width:80px;"><?php esc_html_e( 'Status', 'hub2wp' ); ?></th>
+                            <th style="width:100px;max-width:100px;"><?php esc_html_e( 'Status', 'hub2wp' ); ?></th>
                             <th style="width:80px;max-width:80px;"><?php esc_html_e( 'Actions', 'hub2wp' ); ?></th>
                         </tr>
                     </thead>
@@ -290,13 +290,13 @@ class H2WP_Settings {
 										esc_html_e( 'Not Installed', 'hub2wp' );
 									}
 									if ( ! empty( $repo_data['private'] ) ) {
-										echo ' <span class="dashicons dashicons-lock" title="' . esc_attr__( 'Private Repository', 'hub2wp' ) . '"></span>';
+										echo '<span class="dashicons dashicons-lock" title="' . esc_attr__( 'Private Repository', 'hub2wp' ) . '" style="font-size:14px;width:14px;height:16px;vertical-align:middle;margin-left:3px;"></span>';
 									}
 									?>
 								</td>
 								<td>
                                     <button type="button"
-                                        class="button button-small button-link-delete h2wp-single-remove-btn"
+                                        class="button button-small h2wp-single-remove-btn"
                                         data-repo-key="<?php echo esc_attr( $repo_key ); ?>"
                                         data-confirm="<?php echo esc_js( sprintf( __( 'Stop monitoring "%s"?', 'hub2wp' ), $repo_key ) ); ?>">
                                         <?php esc_html_e( 'Remove', 'hub2wp' ); ?>
@@ -395,7 +395,7 @@ class H2WP_Settings {
 		$tracked_service  = new H2WP_Tracked_Repo_Service();
 		$monitored_themes = $tracked_service->get_tracked_themes();
 		$count            = count( $monitored_themes );
-		$expanded         = ! empty( get_settings_errors( 'h2wp_theme_repos' ) );
+		$expanded         = true;
 		?>
 		<p style="margin:0;">
 			<strong><?php esc_html_e( 'Monitored Themes', 'hub2wp' ); ?></strong>
@@ -518,19 +518,19 @@ class H2WP_Settings {
                                     </td>
                                     <td>
                                         <?php
-                                        if ( ! empty( $repo_data['installed'] ) ) {
-                                            esc_html_e( 'Installed', 'hub2wp' );
-                                        } else {
-                                            esc_html_e( 'Not Installed', 'hub2wp' );
-                                        }
-                                        if ( ! empty( $repo_data['private'] ) ) {
-                                            echo ' <span class="dashicons dashicons-lock" title="' . esc_attr__( 'Private Repository', 'hub2wp' ) . '"></span>';
-                                        }
-                                        ?>
+										if ( ! empty( $repo_data['installed'] ) ) {
+											esc_html_e( 'Installed', 'hub2wp' );
+										} else {
+											esc_html_e( 'Not Installed', 'hub2wp' );
+										}
+										if ( ! empty( $repo_data['private'] ) ) {
+											echo '<span class="dashicons dashicons-lock" title="' . esc_attr__( 'Private Repository', 'hub2wp' ) . '" style="font-size:14px;width:14px;height:16px;vertical-align:middle;margin-left:3px;"></span>';
+										}
+										?>
                                     </td>
                                     <td>
                                         <button type="button"
-                                            class="button button-small button-link-delete h2wp-single-remove-theme-btn"
+                                            class="button button-small h2wp-single-remove-btn"
                                             data-repo-key="<?php echo esc_attr( $repo_key ); ?>"
                                             data-confirm="<?php echo esc_js( sprintf( __( 'Stop monitoring "%s"?', 'hub2wp' ), $repo_key ) ); ?>">
                                             <?php esc_html_e( 'Remove', 'hub2wp' ); ?>
