@@ -239,6 +239,19 @@ class H2WP_Plugin_Installer {
 
         $final_dest = trailingslashit( $remote_source ) . $this->install_target_folder;
 
+        // Clean up any partial/leftover installation in the actual destination directories.
+        // WordPress won't overwrite an existing folder, causing "Failed to install" on retry.
+        $possible_final_dirs = array(
+            WP_PLUGIN_DIR . '/' . $this->install_target_folder,
+            get_theme_root() . '/' . $this->install_target_folder,
+        );
+        foreach ( $possible_final_dirs as $possible_dir ) {
+            if ( $wp_filesystem->is_dir( $possible_dir ) ) {
+                $wp_filesystem->delete( $possible_dir, true );
+                break;
+            }
+        }
+
         // Monorepo: the zip contains the full repo; navigate into the plugin subdirectory
         if ( ! empty( $this->install_subdirectory ) ) {
             $plugin_source = trailingslashit( $source ) . $this->install_subdirectory;

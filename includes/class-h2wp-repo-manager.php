@@ -103,30 +103,29 @@ class H2WP_Repo_Manager {
 			return new WP_Error( 'h2wp_plugin_file_not_found', __( 'The plugin was installed, but hub2wp could not determine its main plugin file for update tracking.', 'hub2wp' ) );
 		}
 
-		$headers      = isset( $compatibility['headers'] ) && is_array( $compatibility['headers'] ) ? $compatibility['headers'] : array();
-        $option_name  = 'h2wp_plugins';
-        $subdirectory = isset( $args['subdirectory'] ) ? trim( (string) $args['subdirectory'], '/' ) : '';
-        // Monorepo plugins use owner/repo/plugin-slug as key to avoid collisions
-        $repo_key     = ! empty( $subdirectory )
-            ? $owner . '/' . $repo . '/' . basename( $subdirectory )
-            : $owner . '/' . $repo;
-        $tracked_repos = get_option( $option_name, array() );
-		$existing     = isset( $tracked_repos[ $repo_key ] ) && is_array( $tracked_repos[ $repo_key ] ) ? $tracked_repos[ $repo_key ] : array();
-		$now          = time();
+		$headers       = isset( $compatibility['headers'] ) && is_array( $compatibility['headers'] ) ? $compatibility['headers'] : array();
+		$option_name   = 'h2wp_plugins';
+		$subdirectory  = isset( $args['subdirectory'] ) ? trim( (string) $args['subdirectory'], '/' ) : '';
+		$repo_key      = ! empty( $subdirectory )
+			? $owner . '/' . $repo . '/' . basename( $subdirectory )
+			: $owner . '/' . $repo;
+		$tracked_repos = get_option( $option_name, array() );
+		$existing      = isset( $tracked_repos[ $repo_key ] ) && is_array( $tracked_repos[ $repo_key ] ) ? $tracked_repos[ $repo_key ] : array();
+		$now           = time();
 
 		$tracked_repos[ $repo_key ] = self::build_tracked_repo_data(
 			array_merge(
 				$existing,
 				$plugin_data,
 				array(
-                    'owner'       => $owner,
-                    'repo'        => $repo,
-                    'repo_type'   => 'plugin',
-                    'plugin_file' => $plugin_file,
-                    'subdirectory'=> $subdirectory,
-					'version'     => isset( $headers['version'] ) ? $headers['version'] : ( isset( $plugin_data['version'] ) ? $plugin_data['version'] : '' ),
-					'requires'    => isset( $headers['requires at least'] ) ? $headers['requires at least'] : '',
-					'tested'      => isset( $headers['tested up to'] ) ? $headers['tested up to'] : '',
+					'owner'        => $owner,
+					'repo'         => $repo,
+					'repo_type'    => 'plugin',
+					'plugin_file'  => $plugin_file,
+					'subdirectory' => $subdirectory,
+					'version'      => isset( $headers['version'] ) ? $headers['version'] : ( isset( $plugin_data['version'] ) ? $plugin_data['version'] : '' ),
+					'requires'     => isset( $headers['requires at least'] ) ? $headers['requires at least'] : '',
+					'tested'       => isset( $headers['tested up to'] ) ? $headers['tested up to'] : '',
 					'requires_php' => isset( $headers['requires php'] ) ? $headers['requires php'] : '',
 				)
 			),
@@ -159,26 +158,39 @@ class H2WP_Repo_Manager {
 			return new WP_Error( 'h2wp_theme_stylesheet_not_found', __( 'The theme was installed, but hub2wp could not determine its stylesheet for update tracking.', 'hub2wp' ) );
 		}
 
-		$headers      = isset( $compatibility['headers'] ) && is_array( $compatibility['headers'] ) ? $compatibility['headers'] : array();
-		$option_name  = 'h2wp_themes';
-		$repo_key     = $owner . '/' . $repo;
+		$headers       = isset( $compatibility['headers'] ) && is_array( $compatibility['headers'] ) ? $compatibility['headers'] : array();
+		$option_name   = 'h2wp_themes';
+		$subdirectory  = isset( $args['subdirectory'] ) ? trim( (string) $args['subdirectory'], '/' ) : '';
+		$repo_key      = ! empty( $subdirectory )
+			? $owner . '/' . $repo . '/' . basename( $subdirectory )
+			: $owner . '/' . $repo;
 		$tracked_repos = get_option( $option_name, array() );
-		$existing     = isset( $tracked_repos[ $repo_key ] ) && is_array( $tracked_repos[ $repo_key ] ) ? $tracked_repos[ $repo_key ] : array();
-		$now          = time();
+
+		// Remove any legacy 2-part key entry to prevent duplicates after monorepo install
+		if ( ! empty( $subdirectory ) ) {
+			$legacy_key = $owner . '/' . $repo;
+			if ( isset( $tracked_repos[ $legacy_key ] ) && empty( $tracked_repos[ $legacy_key ]['subdirectory'] ) ) {
+				unset( $tracked_repos[ $legacy_key ] );
+			}
+		}
+
+		$existing = isset( $tracked_repos[ $repo_key ] ) && is_array( $tracked_repos[ $repo_key ] ) ? $tracked_repos[ $repo_key ] : array();
+		$now      = time();
 
 		$tracked_repos[ $repo_key ] = self::build_tracked_repo_data(
 			array_merge(
 				$existing,
 				$theme_data,
 				array(
-					'owner'       => $owner,
-					'repo'        => $repo,
-					'repo_type'   => 'theme',
-					'stylesheet'  => $stylesheet,
-					'template'    => ! empty( $theme_data['template'] ) ? $theme_data['template'] : $stylesheet,
-					'version'     => isset( $headers['version'] ) ? $headers['version'] : ( isset( $theme_data['version'] ) ? $theme_data['version'] : '' ),
-					'requires'    => isset( $headers['requires at least'] ) ? $headers['requires at least'] : '',
-					'tested'      => isset( $headers['tested up to'] ) ? $headers['tested up to'] : '',
+					'owner'        => $owner,
+					'repo'         => $repo,
+					'repo_type'    => 'theme',
+					'stylesheet'   => $stylesheet,
+					'template'     => ! empty( $theme_data['template'] ) ? $theme_data['template'] : $stylesheet,
+					'subdirectory' => $subdirectory,
+					'version'      => isset( $headers['version'] ) ? $headers['version'] : ( isset( $theme_data['version'] ) ? $theme_data['version'] : '' ),
+					'requires'     => isset( $headers['requires at least'] ) ? $headers['requires at least'] : '',
+					'tested'       => isset( $headers['tested up to'] ) ? $headers['tested up to'] : '',
 					'requires_php' => isset( $headers['requires php'] ) ? $headers['requires php'] : '',
 				)
 			),

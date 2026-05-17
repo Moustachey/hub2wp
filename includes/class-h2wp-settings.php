@@ -530,7 +530,7 @@ class H2WP_Settings {
                                     </td>
                                     <td>
                                         <button type="button"
-                                            class="button button-small h2wp-single-remove-btn"
+                                            class="button button-small h2wp-single-remove-theme-btn"
                                             data-repo-key="<?php echo esc_attr( $repo_key ); ?>"
                                             data-confirm="<?php echo esc_js( sprintf( __( 'Stop monitoring "%s"?', 'hub2wp' ), $repo_key ) ); ?>">
                                             <?php esc_html_e( 'Remove', 'hub2wp' ); ?>
@@ -658,28 +658,39 @@ class H2WP_Settings {
 			);
 		}
 
-		$plugin_file = false;
-		if ( class_exists( 'H2WP_Admin_Page' ) ) {
-			$plugin_file = H2WP_Admin_Page::get_installed_plugin_file( $owner, $repo );
-		}
+		// For monorepo entries the installed folder matches the slug, not the repo name
+        $lookup_slug = ! empty( $subdirectory ) ? basename( $subdirectory ) : $repo;
+        $plugin_file = false;
+        $stylesheet  = false;
 
-		$entry = array(
-			'owner'               => $owner,
-			'repo'                => $repo,
-			'name'                => ! empty( $subdirectory ) ? basename( $subdirectory ) : ( isset( $repo_data['name'] ) ? $repo_data['name'] : $repo ),
-			'private'             => isset( $repo_data['private'] ) ? (bool) $repo_data['private'] : false,
-			'branch'              => (string) $branch,
-			'prioritize_releases' => (bool) $prioritize,
-			'subdirectory'        => $subdirectory,
-			'added'               => time(),
-			'added_by'            => get_current_user_id(),
-			'last_checked'        => time(),
-			'last_updated'        => time(),
-		);
+        if ( class_exists( 'H2WP_Admin_Page' ) ) {
+            if ( 'theme' === $repo_type ) {
+                $stylesheet = H2WP_Admin_Page::get_installed_theme_stylesheet( $owner, $lookup_slug );
+            } else {
+                $plugin_file = H2WP_Admin_Page::get_installed_plugin_file( $owner, $lookup_slug );
+            }
+        }
 
-		if ( $plugin_file ) {
-			$entry['plugin_file'] = $plugin_file;
-		}
+        $entry = array(
+            'owner'               => $owner,
+            'repo'                => $repo,
+            'name'                => ! empty( $subdirectory ) ? basename( $subdirectory ) : ( isset( $repo_data['name'] ) ? $repo_data['name'] : $repo ),
+            'private'             => isset( $repo_data['private'] ) ? (bool) $repo_data['private'] : false,
+            'branch'              => (string) $branch,
+            'prioritize_releases' => (bool) $prioritize,
+            'subdirectory'        => $subdirectory,
+            'added'               => time(),
+            'added_by'            => get_current_user_id(),
+            'last_checked'        => time(),
+            'last_updated'        => time(),
+        );
+
+        if ( $plugin_file ) {
+            $entry['plugin_file'] = $plugin_file;
+        }
+        if ( $stylesheet ) {
+            $entry['stylesheet'] = $stylesheet;
+        }
 
 		$monitored_plugins[ $repo_key ] = $entry;
 
