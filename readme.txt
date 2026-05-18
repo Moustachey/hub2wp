@@ -3,7 +3,7 @@ Contributors: pbalazs
 Tags: github, plugins, installer
 Requires at least: 5.8
 Tested up to: 7.0
-Stable tag: 1.6.0
+Stable tag: 1.6.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -60,6 +60,12 @@ Manage hub2wp settings with WP-CLI too:
 No, but you have a higher request limit if you use one.
 
 == Changelog ==
+
+= 1.6.1 = 
+* Better sub-menu position for 'Add Github Plugin'
+* Added sub-menu item for 'Add GitHub Theme' under 'Appearance
+* Added 'Add GitHub Plugin' button next to the 'Add Plugin' button on /wp-admin/plugins.php
+* Changed 'GitHub themes' button next to the 'Add Theme' button to 'Add GitHub Theme' on /wp-admin/themes.php
 
 = 1.6.0 =
 * Mono-repo support added

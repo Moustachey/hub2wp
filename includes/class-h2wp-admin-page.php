@@ -13,10 +13,12 @@ class H2WP_Admin_Page {
 	 */
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'add_menu_page' ) );
-		add_action( 'admin_menu', array( __CLASS__, 'add_theme_browser_page' ) );
-		add_action( 'admin_menu', array( __CLASS__, 'hide_theme_browser_submenu' ), 999 );
-		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
-		add_action( 'admin_footer-themes.php', array( __CLASS__, 'render_themes_screen_button' ) );
+        add_action( 'admin_menu', array( __CLASS__, 'add_theme_browser_page' ) );
+        add_action( 'admin_menu', array( __CLASS__, 'reorder_plugin_submenu' ), 9999 );
+        add_action( 'admin_menu', array( __CLASS__, 'reorder_theme_submenu' ), 9999 );
+        add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
+        add_action( 'admin_footer-themes.php', array( __CLASS__, 'render_themes_screen_button' ) );
+        add_action( 'admin_footer-plugins.php', array( __CLASS__, 'render_plugins_screen_button' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'display_rate_limit_notice' ) );
 		add_filter( 'admin_title', array( __CLASS__, 'filter_admin_title' ), 10, 2 );
 		add_filter( 'plugin_action_links_' . H2WP_PLUGIN_BASENAME, array( __CLASS__, 'add_action_links' ) );
@@ -155,36 +157,116 @@ class H2WP_Admin_Page {
 	 * Add admin menu page.
 	 */
 	public static function add_menu_page() {
-		add_submenu_page(
-			'plugins.php',
-			__( 'Add Plugins', 'hub2wp' ),
-			__( 'Add GitHub Plugin', 'hub2wp' ),
-			'install_plugins',
-			'h2wp-plugin-browser',
-			array( __CLASS__, 'render_page' )
-		);
-	}
+        add_submenu_page(
+            'plugins.php',
+            __( 'Add GitHub Plugin', 'hub2wp' ),
+            __( 'Add GitHub Plugin', 'hub2wp' ),
+            'install_plugins',
+            'h2wp-plugin-browser',
+            array( __CLASS__, 'render_page' ),
+            11
+        );
+    }
 
 	/**
 	 * Register the hidden theme browser page.
 	 */
 	public static function add_theme_browser_page() {
-		add_submenu_page(
-			'themes.php',
-			__( 'GitHub Themes', 'hub2wp' ),
-			__( 'GitHub Themes', 'hub2wp' ),
-			'install_themes',
-			'h2wp-theme-browser',
-			array( __CLASS__, 'render_theme_page' )
-		);
-	}
+        add_submenu_page(
+            'themes.php',
+            __( 'Add GitHub Theme', 'hub2wp' ),
+            __( 'Add GitHub Theme', 'hub2wp' ),
+            'install_themes',
+            'h2wp-theme-browser',
+            array( __CLASS__, 'render_theme_page' )
+        );
+    }
 
 	/**
-	 * Hide the GitHub themes page from the Appearance submenu.
-	 */
-	public static function hide_theme_browser_submenu() {
-		remove_submenu_page( 'themes.php', 'h2wp-theme-browser' );
-	}
+     * Move "Add GitHub Theme" to directly above Theme File Editor in the Appearance submenu.
+     */
+    public static function reorder_theme_submenu() {
+        global $submenu;
+
+        if ( empty( $submenu['themes.php'] ) ) {
+            return;
+        }
+
+        $our_item = null;
+        $our_key  = null;
+
+        foreach ( $submenu['themes.php'] as $key => $item ) {
+            if ( isset( $item[2] ) && 'h2wp-theme-browser' === $item[2] ) {
+                $our_item = $item;
+                $our_key  = $key;
+                break;
+            }
+        }
+
+        if ( null === $our_item ) {
+            return;
+        }
+
+        unset( $submenu['themes.php'][ $our_key ] );
+
+        $reordered = array();
+        $inserted  = false;
+        foreach ( array_values( $submenu['themes.php'] ) as $item ) {
+            if ( ! $inserted && isset( $item[2] ) && 'theme-editor.php' === $item[2] ) {
+                $reordered[] = $our_item;
+                $inserted    = true;
+            }
+            $reordered[] = $item;
+        }
+        if ( ! $inserted ) {
+            $reordered[] = $our_item;
+        }
+
+        $submenu['themes.php'] = $reordered;
+    }
+
+	/**
+     * Move "Add GitHub Plugin" to directly above Plugin File Editor in the Plugins submenu.
+     */
+    public static function reorder_plugin_submenu() {
+        global $submenu;
+
+        if ( empty( $submenu['plugins.php'] ) ) {
+            return;
+        }
+
+        $our_item = null;
+        $our_key  = null;
+
+        foreach ( $submenu['plugins.php'] as $key => $item ) {
+            if ( isset( $item[2] ) && 'h2wp-plugin-browser' === $item[2] ) {
+                $our_item = $item;
+                $our_key  = $key;
+                break;
+            }
+        }
+
+        if ( null === $our_item ) {
+            return;
+        }
+
+        unset( $submenu['plugins.php'][ $our_key ] );
+
+        $reordered = array();
+        $inserted  = false;
+        foreach ( array_values( $submenu['plugins.php'] ) as $item ) {
+            if ( ! $inserted && isset( $item[2] ) && 'plugin-editor.php' === $item[2] ) {
+                $reordered[] = $our_item;
+                $inserted    = true;
+            }
+            $reordered[] = $item;
+        }
+        if ( ! $inserted ) {
+            $reordered[] = $our_item;
+        }
+
+        $submenu['plugins.php'] = $reordered;
+    }
 
 	/**
 	 * Add a "GitHub Themes" button beside "Add Theme" on Appearance > Themes.
@@ -205,12 +287,38 @@ class H2WP_Admin_Page {
 				var githubThemesButton = document.createElement('a');
 				githubThemesButton.className = 'page-title-action';
 				githubThemesButton.href = <?php echo wp_json_encode( $url ); ?>;
-				githubThemesButton.textContent = <?php echo wp_json_encode( __( 'GitHub Themes', 'hub2wp' ) ); ?>;
+				githubThemesButton.textContent = <?php echo wp_json_encode( __( 'Add GitHub Theme', 'hub2wp' ) ); ?>;
 				addThemeButton.insertAdjacentElement('afterend', githubThemesButton);
 			});
 		</script>
 		<?php
 	}
+
+	/**
+     * Add an "Add GitHub Plugin" button beside "Add New Plugin" on Plugins > Installed Plugins.
+     */
+    public static function render_plugins_screen_button() {
+        if ( ! current_user_can( 'install_plugins' ) ) {
+            return;
+        }
+
+        $url = admin_url( 'plugins.php?page=h2wp-plugin-browser' );
+        ?>
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                var addPluginButton = document.querySelector('.wrap a.page-title-action');
+                if (!addPluginButton) {
+                    return;
+                }
+                var githubPluginButton = document.createElement('a');
+                githubPluginButton.className = 'page-title-action';
+                githubPluginButton.href = <?php echo wp_json_encode( $url ); ?>;
+                githubPluginButton.textContent = <?php echo wp_json_encode( __( 'Add GitHub Plugin', 'hub2wp' ) ); ?>;
+                addPluginButton.insertAdjacentElement('afterend', githubPluginButton);
+            });
+        </script>
+        <?php
+    }
 
 	/**
 	 * Check if a plugin is installed.
