@@ -3,7 +3,7 @@ Contributors: pbalazs
 Tags: github, plugins, installer
 Requires at least: 5.8
 Tested up to: 7.0
-Stable tag: 1.5.2
+Stable tag: 1.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -60,6 +60,15 @@ Manage hub2wp settings with WP-CLI too:
 No, but you have a higher request limit if you use one.
 
 == Changelog ==
+
+= 1.6.0 =
+* Mono-repo support added
+* Animate loading actions and show selected plugins count
+* "Already Monitoring" in 'Add Repository' picker
+* Bulk remove options added to Monitored Plugins table
+* Theme support for monorepo themes
+* Better padlock formatting and expand theme repo by default
+* Fixed a bunch of issues around plugin/theme tracking
 
 = 1.5.2 =
 * Added list of known-incompatible plugins and themes, to exclude them from search results.
