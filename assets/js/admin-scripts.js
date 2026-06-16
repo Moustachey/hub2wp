@@ -434,7 +434,25 @@ jQuery(document).ready(function($) {
         });
     }
 
-    function h2wpRenderMonorepoPicker( plugins, owner, repo ) {
+    /**
+     * Escape a string for safe insertion into HTML.
+     *
+     * Folder names and subdirectory paths come from GitHub and must not be
+     * concatenated directly into markup to prevent XSS.
+     *
+     * @param {string} str
+     * @return {string}
+     */
+    function h2wpEscHtml( str ) {
+        return String( str )
+            .replace( /&/g, '&amp;' )
+            .replace( /</g, '&lt;' )
+            .replace( />/g, '&gt;' )
+            .replace( /"/g, '&quot;' )
+            .replace( /'/g, '&#039;' );
+    }
+
+        function h2wpRenderMonorepoPicker( plugins, owner, repo ) {
         var $picker = $('#h2wp-monorepo-picker');
 
         var html  = '<p><strong>Monorepo detected</strong> — ';
@@ -450,17 +468,17 @@ jQuery(document).ready(function($) {
                             h2wp_ajax_object.monitored_subdirs.indexOf( plugin.subdirectory ) !== -1;
             if ( monitored ) {
                 html += '<label style="display:block;margin-bottom:6px;opacity:0.55;cursor:default;">'
-                    + '<input type="checkbox" class="h2wp-monorepo-plugin-cb" value="' + plugin.subdirectory + '" disabled /> '
-                    + '<strong>' + plugin.slug + '</strong> '
-                    + '<span style="color:#646970;font-size:12px;">(' + plugin.subdirectory + ')</span>'
+                    + '<input type="checkbox" class="h2wp-monorepo-plugin-cb" value="' + h2wpEscHtml( plugin.subdirectory ) + '" disabled /> '
+                    + '<strong>' + h2wpEscHtml( plugin.slug ) + '</strong> '
+                    + '<span style="color:#646970;font-size:12px;">(' + h2wpEscHtml( plugin.subdirectory ) + ')</span>'
                     + ' <em style="color:#2271b1;font-size:12px;">— Already Monitoring</em>'
                     + '</label>';
             } else {
                 availableCount++;
                 html += '<label style="display:block;margin-bottom:6px;">'
-                    + '<input type="checkbox" class="h2wp-monorepo-plugin-cb" value="' + plugin.subdirectory + '" checked /> '
-                    + '<strong>' + plugin.slug + '</strong> '
-                    + '<span style="color:#646970;font-size:12px;">(' + plugin.subdirectory + ')</span>'
+                    + '<input type="checkbox" class="h2wp-monorepo-plugin-cb" value="' + h2wpEscHtml( plugin.subdirectory ) + '" checked /> '
+                    + '<strong>' + h2wpEscHtml( plugin.slug ) + '</strong> '
+                    + '<span style="color:#646970;font-size:12px;">(' + h2wpEscHtml( plugin.subdirectory ) + ')</span>'
                     + '</label>';
             }
         });
@@ -636,17 +654,17 @@ jQuery(document).ready(function($) {
             var monitored = monitoredThemeSubdirs.indexOf( theme.subdirectory ) !== -1;
             if ( monitored ) {
                 html += '<label style="display:block;margin-bottom:6px;opacity:0.55;cursor:default;">'
-                    + '<input type="checkbox" class="h2wp-monorepo-theme-cb" value="' + theme.subdirectory + '" disabled /> '
-                    + '<strong>' + theme.slug + '</strong> '
-                    + '<span style="color:#646970;font-size:12px;">(' + theme.subdirectory + ')</span>'
+                    + '<input type="checkbox" class="h2wp-monorepo-theme-cb" value="' + h2wpEscHtml( theme.subdirectory ) + '" disabled /> '
+                    + '<strong>' + h2wpEscHtml( theme.slug ) + '</strong> '
+                    + '<span style="color:#646970;font-size:12px;">(' + h2wpEscHtml( theme.subdirectory ) + ')</span>'
                     + ' <em style="color:#2271b1;font-size:12px;">— Already Monitoring</em>'
                     + '</label>';
             } else {
                 availableCount++;
                 html += '<label style="display:block;margin-bottom:6px;">'
-                    + '<input type="checkbox" class="h2wp-monorepo-theme-cb" value="' + theme.subdirectory + '" checked /> '
-                    + '<strong>' + theme.slug + '</strong> '
-                    + '<span style="color:#646970;font-size:12px;">(' + theme.subdirectory + ')</span>'
+                    + '<input type="checkbox" class="h2wp-monorepo-theme-cb" value="' + h2wpEscHtml( theme.subdirectory ) + '" checked /> '
+                    + '<strong>' + h2wpEscHtml( theme.slug ) + '</strong> '
+                    + '<span style="color:#646970;font-size:12px;">(' + h2wpEscHtml( theme.subdirectory ) + ')</span>'
                     + '</label>';
             }
         });
