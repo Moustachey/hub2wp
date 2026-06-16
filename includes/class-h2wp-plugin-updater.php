@@ -71,7 +71,7 @@ class H2WP_Plugin_Updater {
 			$repo         = $parts[1];
 			$subdirectory = isset( $plugin['subdirectory'] ) ? $plugin['subdirectory'] : '';
 
-			$tracking_preferences = H2WP_Settings::get_repo_tracking_preferences( $owner, $repo, 'plugin' );
+			$tracking_preferences = H2WP_Settings::get_repo_tracking_preferences( $owner, $repo, 'plugin', $subdirectory );
 			$branch               = $tracking_preferences['branch'];
 			$prioritize_releases  = $tracking_preferences['prioritize_releases'];
 			$source_context       = $api->resolve_version_source( $owner, $repo, $branch, $prioritize_releases );
@@ -296,8 +296,11 @@ class H2WP_Plugin_Updater {
 			$plugin_slug = dirname( $plugin['plugin_file'] );
 
 			if ( $plugin_slug === $args->slug ) {
-				list( $owner, $repo ) = explode( '/', $plugin_id );
-				$tracking_preferences = H2WP_Settings::get_repo_tracking_preferences( $owner, $repo, 'plugin' );
+				$parts        = explode( '/', $plugin_id );
+				$owner        = $parts[0];
+				$repo         = $parts[1];
+				$subdirectory = isset( $plugin['subdirectory'] ) ? $plugin['subdirectory'] : '';
+				$tracking_preferences = H2WP_Settings::get_repo_tracking_preferences( $owner, $repo, 'plugin', $subdirectory );
 				$branch               = $tracking_preferences['branch'];
 				$prioritize_releases  = $tracking_preferences['prioritize_releases'];
 
@@ -711,13 +714,13 @@ class H2WP_Plugin_Updater {
 				'filename'    => $tmpfname,
 				'redirection' => 5,
 				'headers'     => array(
-                    'Authorization' => 'token ' . $access_token,
-                    // Release asset URLs need octet-stream to receive the file itself.
-                    // Zipball URLs need the standard API accept header.
-                    'Accept'        => ( false !== strpos( $package, '/releases/assets/' ) )
-                        ? 'application/octet-stream'
-                        : 'application/vnd.github+json',
-                ),
+					'Authorization' => 'token ' . $access_token,
+					// Release asset URLs need octet-stream to receive the file itself.
+					// Zipball URLs need the standard API accept header.
+					'Accept'        => ( false !== strpos( $package, '/releases/assets/' ) )
+						? 'application/octet-stream'
+						: 'application/vnd.github+json',
+				),
 			)
 		);
 
@@ -806,23 +809,23 @@ class H2WP_Plugin_Updater {
 	 * @return string
 	 */
 	private static function get_repo_key_from_package_url( $package ) {
-        $path = wp_parse_url( $package, PHP_URL_PATH );
-        if ( empty( $path ) ) {
-            return '';
-        }
+		$path = wp_parse_url( $package, PHP_URL_PATH );
+		if ( empty( $path ) ) {
+			return '';
+		}
 
-        // Standard zipball: /repos/{owner}/{repo}/zipball/...
-        if ( preg_match( '#/repos/([^/]+)/([^/]+)/zipball(?:/.*)?$#', $path, $matches ) ) {
-            return strtolower( $matches[1] . '/' . $matches[2] );
-        }
+		// Standard zipball: /repos/{owner}/{repo}/zipball/...
+		if ( preg_match( '#/repos/([^/]+)/([^/]+)/zipball(?:/.*)?$#', $path, $matches ) ) {
+			return strtolower( $matches[1] . '/' . $matches[2] );
+		}
 
-        // Release asset: /repos/{owner}/{repo}/releases/assets/{id}
-        if ( preg_match( '#/repos/([^/]+)/([^/]+)/releases/assets/#', $path, $matches ) ) {
-            return strtolower( $matches[1] . '/' . $matches[2] );
-        }
+		// Release asset: /repos/{owner}/{repo}/releases/assets/{id}
+		if ( preg_match( '#/repos/([^/]+)/([^/]+)/releases/assets/#', $path, $matches ) ) {
+			return strtolower( $matches[1] . '/' . $matches[2] );
+		}
 
-        return '';
-    }
+		return '';
+	}
 
 	/**
 	 * Clean up scheduled events on plugin deactivation.

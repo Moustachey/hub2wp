@@ -18,10 +18,10 @@ class H2WP_Settings {
 	 */
 	public static function init() {
 		add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
-        add_action( 'admin_menu', array( __CLASS__, 'add_settings_page' ) );
-        add_action( 'admin_init', array( __CLASS__, 'handle_private_repo_actions' ) );
-        add_action( 'admin_init', array( __CLASS__, 'handle_run_update_check_action' ) );
-        add_action( 'admin_notices', array( __CLASS__, 'display_plugins_added_notice' ) );
+		add_action( 'admin_menu', array( __CLASS__, 'add_settings_page' ) );
+		add_action( 'admin_init', array( __CLASS__, 'handle_private_repo_actions' ) );
+		add_action( 'admin_init', array( __CLASS__, 'handle_run_update_check_action' ) );
+		add_action( 'admin_notices', array( __CLASS__, 'display_plugins_added_notice' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'display_private_repo_notices' ) );
 		add_action( 'admin_post_h2wp_clear_cache', array( __CLASS__, 'handle_clear_cache' ) );
 		add_action( 'wp_ajax_h2wp_clear_cache', array( __CLASS__, 'ajax_clear_cache' ) );
@@ -625,7 +625,7 @@ class H2WP_Settings {
 	 * @return string|WP_Error     The stored repo key on success, WP_Error on failure.
 	 */
 	public static function add_repo_to_monitored( $owner, $repo, $branch = '', $prioritize = true, $subdirectory = '', $repo_type = 'plugin' ) {
-    	$repo_type = in_array( $repo_type, array( 'plugin', 'theme' ), true ) ? $repo_type : 'plugin';
+		$repo_type = in_array( $repo_type, array( 'plugin', 'theme' ), true ) ? $repo_type : 'plugin';
 		$owner        = strtolower( sanitize_text_field( trim( (string) $owner ) ) );
 		$repo         = strtolower( sanitize_text_field( trim( (string) $repo ) ) );
 		$subdirectory = trim( sanitize_text_field( (string) $subdirectory ), '/' );
@@ -659,42 +659,42 @@ class H2WP_Settings {
 		}
 
 		// For monorepo entries the installed folder matches the slug, not the repo name
-        $lookup_slug = ! empty( $subdirectory ) ? basename( $subdirectory ) : $repo;
-        $plugin_file = false;
-        $stylesheet  = false;
+		$lookup_slug = ! empty( $subdirectory ) ? basename( $subdirectory ) : $repo;
+		$plugin_file = false;
+		$stylesheet  = false;
 
-        if ( class_exists( 'H2WP_Admin_Page' ) ) {
-            if ( 'theme' === $repo_type ) {
-                $stylesheet = H2WP_Admin_Page::get_installed_theme_stylesheet( $owner, $lookup_slug );
-            } else {
-                $plugin_file = H2WP_Admin_Page::get_installed_plugin_file( $owner, $lookup_slug );
-            }
-        }
+		if ( class_exists( 'H2WP_Admin_Page' ) ) {
+			if ( 'theme' === $repo_type ) {
+				$stylesheet = H2WP_Admin_Page::get_installed_theme_stylesheet( $owner, $lookup_slug );
+			} else {
+				$plugin_file = H2WP_Admin_Page::get_installed_plugin_file( $owner, $lookup_slug );
+			}
+		}
 
-        $entry = array(
-            'owner'               => $owner,
-            'repo'                => $repo,
-            'name'                => ! empty( $subdirectory ) ? basename( $subdirectory ) : ( isset( $repo_data['name'] ) ? $repo_data['name'] : $repo ),
-            'private'             => isset( $repo_data['private'] ) ? (bool) $repo_data['private'] : false,
-            'branch'              => (string) $branch,
-            'prioritize_releases' => (bool) $prioritize,
-            'subdirectory'        => $subdirectory,
-            'added'               => time(),
-            'added_by'            => get_current_user_id(),
-            'last_checked'        => time(),
-            'last_updated'        => time(),
-        );
+		$entry = array(
+			'owner'               => $owner,
+			'repo'                => $repo,
+			'name'                => ! empty( $subdirectory ) ? basename( $subdirectory ) : ( isset( $repo_data['name'] ) ? $repo_data['name'] : $repo ),
+			'private'             => isset( $repo_data['private'] ) ? (bool) $repo_data['private'] : false,
+			'branch'              => (string) $branch,
+			'prioritize_releases' => (bool) $prioritize,
+			'subdirectory'        => $subdirectory,
+			'added'               => time(),
+			'added_by'            => get_current_user_id(),
+			'last_checked'        => time(),
+			'last_updated'        => time(),
+		);
 
-        if ( $plugin_file ) {
-            $entry['plugin_file'] = $plugin_file;
-        }
-        if ( $stylesheet ) {
-            $entry['stylesheet'] = $stylesheet;
-        }
+		if ( $plugin_file ) {
+			$entry['plugin_file'] = $plugin_file;
+		}
+		if ( $stylesheet ) {
+			$entry['stylesheet'] = $stylesheet;
+		}
 
 		$monitored_plugins[ $repo_key ] = $entry;
 
-        if ( ! update_option( $option_name, $monitored_plugins ) ) {
+		if ( ! update_option( $option_name, $monitored_plugins ) ) {
 			return new WP_Error( 'h2wp_add_failed', __( 'Failed to save repository. Please try again.', 'hub2wp' ) );
 		}
 
@@ -707,21 +707,21 @@ class H2WP_Settings {
 	public static function handle_private_repo_actions() {
 		// Verify at least one of the expected nonces before reading any POST data.
 		$add_nonce_valid    = isset( $_POST['h2wp_private_repo_nonce'] )
-            && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_private_repo_nonce'] ) ), 'h2wp_add_private_repo' );
-        $remove_nonce_valid = isset( $_POST['h2wp_remove_repo_nonce'] )
-            && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_remove_repo_nonce'] ) ), 'h2wp_remove_private_repo' );
-        $add_theme_nonce_valid = isset( $_POST['h2wp_private_theme_repo_nonce'] )
-            && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_private_theme_repo_nonce'] ) ), 'h2wp_add_private_theme_repo' );
-        $remove_theme_nonce_valid = isset( $_POST['h2wp_remove_theme_repo_nonce'] )
-            && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_remove_theme_repo_nonce'] ) ), 'h2wp_remove_private_theme_repo' );
-        $bulk_remove_nonce_valid = isset( $_POST['h2wp_bulk_remove_nonce'] )
-            && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_bulk_remove_nonce'] ) ), 'h2wp_bulk_remove_repos' );
-        $bulk_remove_theme_nonce_valid = isset( $_POST['h2wp_bulk_remove_theme_nonce'] )
-            && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_bulk_remove_theme_nonce'] ) ), 'h2wp_bulk_remove_theme_repos' );
+			&& wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_private_repo_nonce'] ) ), 'h2wp_add_private_repo' );
+		$remove_nonce_valid = isset( $_POST['h2wp_remove_repo_nonce'] )
+			&& wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_remove_repo_nonce'] ) ), 'h2wp_remove_private_repo' );
+		$add_theme_nonce_valid = isset( $_POST['h2wp_private_theme_repo_nonce'] )
+			&& wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_private_theme_repo_nonce'] ) ), 'h2wp_add_private_theme_repo' );
+		$remove_theme_nonce_valid = isset( $_POST['h2wp_remove_theme_repo_nonce'] )
+			&& wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_remove_theme_repo_nonce'] ) ), 'h2wp_remove_private_theme_repo' );
+		$bulk_remove_nonce_valid = isset( $_POST['h2wp_bulk_remove_nonce'] )
+			&& wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_bulk_remove_nonce'] ) ), 'h2wp_bulk_remove_repos' );
+		$bulk_remove_theme_nonce_valid = isset( $_POST['h2wp_bulk_remove_theme_nonce'] )
+			&& wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['h2wp_bulk_remove_theme_nonce'] ) ), 'h2wp_bulk_remove_theme_repos' );
 
-        if ( ! $add_nonce_valid && ! $remove_nonce_valid && ! $add_theme_nonce_valid && ! $remove_theme_nonce_valid && ! $bulk_remove_nonce_valid && ! $bulk_remove_theme_nonce_valid ) {
-            return;
-        }
+		if ( ! $add_nonce_valid && ! $remove_nonce_valid && ! $add_theme_nonce_valid && ! $remove_theme_nonce_valid && ! $bulk_remove_nonce_valid && ! $bulk_remove_theme_nonce_valid ) {
+			return;
+		}
 
 		if ( ! isset( $_POST['h2wp_action'] ) ) {
 			return;
@@ -736,12 +736,12 @@ class H2WP_Settings {
 		} elseif ( 'add_private_theme_repo' === $action ) {
 			self::handle_add_private_theme_repo();
 		} elseif ( 'remove_private_theme_repo' === $action ) {
-            self::handle_remove_private_theme_repo();
-        } elseif ( 'bulk_remove_repos' === $action ) {
-            self::handle_bulk_remove_repos();
-        } elseif ( 'bulk_remove_theme_repos' === $action ) {
-            self::handle_bulk_remove_theme_repos();
-        }
+			self::handle_remove_private_theme_repo();
+		} elseif ( 'bulk_remove_repos' === $action ) {
+			self::handle_bulk_remove_repos();
+		} elseif ( 'bulk_remove_theme_repos' === $action ) {
+			self::handle_bulk_remove_theme_repos();
+		}
 	}
 
 	/**
@@ -1452,12 +1452,19 @@ class H2WP_Settings {
 	 * @param string $repo_type Repository type: plugin|theme.
 	 * @return array
 	 */
-	public static function get_repo_tracking_preferences( $owner, $repo, $repo_type = 'plugin' ) {
+	public static function get_repo_tracking_preferences( $owner, $repo, $repo_type = 'plugin', $subdirectory = '' ) {
 		$repo_type   = in_array( $repo_type, array( 'plugin', 'theme' ), true ) ? $repo_type : 'plugin';
 		$option_name = ( 'theme' === $repo_type ) ? 'h2wp_themes' : 'h2wp_plugins';
 		$monitored   = get_option( $option_name, array() );
-		$repo_key    = $owner . '/' . $repo;
-		$repo_data   = isset( $monitored[ $repo_key ] ) && is_array( $monitored[ $repo_key ] ) ? $monitored[ $repo_key ] : array();
+
+		// For monorepo entries the key includes the slug: owner/repo/slug.
+		// Fall back to the base owner/repo key for single-repo entries.
+		$repo_key      = $owner . '/' . $repo;
+		$monorepo_key  = ! empty( $subdirectory ) ? $repo_key . '/' . basename( $subdirectory ) : '';
+		$lookup_key    = ( ! empty( $monorepo_key ) && isset( $monitored[ $monorepo_key ] ) )
+			? $monorepo_key
+			: $repo_key;
+		$repo_data     = isset( $monitored[ $lookup_key ] ) && is_array( $monitored[ $lookup_key ] ) ? $monitored[ $lookup_key ] : array();
 
 		$preferences = array(
 			'branch'              => isset( $repo_data['branch'] ) ? (string) $repo_data['branch'] : '',
